@@ -2,6 +2,7 @@ import type { LemaConfig } from "./config.js";
 import { Provider, type ChatMessage } from "./provider.js";
 import { ALL_TOOLS, toolMap, type Tool } from "./tools.js";
 import { SkillStore } from "./skills.js";
+import { renderMarkdown } from "./markdown.js";
 import * as ui from "./ui.js";
 
 const SYSTEM = `You are lema, a focused local coding agent running on a small local model.
@@ -14,11 +15,25 @@ Rules, tuned for small models — follow them strictly:
 - If verification fails, read the error, fix, and try again. Do not claim success unverified.
 - Keep responses short. When the task is done and verified, reply with a final summary and no tool call.`;
 
+export interface AgentStats {
+  /** Total prompt (input) tokens across all model calls. */
+  prompt: number;
+  /** Total completion (output) tokens. */
+  completion: number;
+  /** Generation throughput, completion tokens per second. */
+  tokps: number;
+  /** Wall-clock seconds spent in model calls. */
+  seconds: number;
+  /** Context occupied by the last call (a proxy for "how full" the window is). */
+  ctx: number;
+}
+
 export interface AgentEvent {
-  type: "step" | "tool" | "assistant" | "done";
+  type: "step" | "tool" | "assistant" | "thinking" | "thinking-stop" | "done";
   text?: string;
   tool?: string;
   detail?: string;
+  stats?: AgentStats;
 }
 
 export interface AgentResult {
@@ -64,15 +79,37 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
   const schemas = tools.map((t) => t.schema);
   let steps = 0;
+  let promptTok = 0;
+  let completionTok = 0;
+  let ctxTok = 0;
+  const t0 = Date.now();
+
+  const stats = (): AgentStats => {
+    const seconds = (Date.now() - t0) / 1000;
+    return {
+      prompt: promptTok,
+      completion: completionTok,
+      tokps: seconds > 0 ? completionTok / seconds : 0,
+      seconds,
+      ctx: ctxTok,
+    };
+  };
 
   while (steps < cfg.maxSteps) {
     steps++;
-    const reply = await provider.chat(messages, { tools: schemas });
+    emit({ type: "thinking" });
+    const { message: reply, usage } = await provider.chat(messages, { tools: schemas });
+    emit({ type: "thinking-stop" });
+    if (usage) {
+      promptTok += usage.prompt_tokens ?? 0;
+      completionTok += usage.completion_tokens ?? 0;
+      ctxTok = usage.total_tokens ?? ctxTok;
+    }
     messages.push(reply);
 
     if (!reply.tool_calls?.length) {
       const answer = reply.content ?? "";
-      emit({ type: "done", text: answer });
+      emit({ type: "done", text: answer, stats: stats() });
       return { answer, steps, transcript: messages };
     }
 
@@ -103,7 +140,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
     }
   }
 
-  emit({ type: "done", text: "(stopped: hit maxSteps)" });
+  emit({ type: "done", text: "(stopped: hit maxSteps)", stats: stats() });
   return { answer: "Stopped after reaching the step limit.", steps, transcript: messages };
 }
 
@@ -113,13 +150,37 @@ function summarizeArgs(args: Record<string, any>): string {
   return Object.keys(args).join(", ");
 }
 
+function formatStats(s: AgentStats): string {
+  const parts = [
+    `↑ ${s.prompt}`,
+    `↓ ${s.completion}`,
+    `${s.tokps.toFixed(1)} tok/s`,
+    `${s.seconds.toFixed(1)}s`,
+  ];
+  if (s.ctx) parts.push(`ctx ${s.ctx}`);
+  return ui.dim("  " + parts.join("  ·  "));
+}
+
+let activeSpinner: ui.SpinHandle | null = null;
+
 /** Wire the default console renderer for agent events. */
 export function consoleRenderer(e: AgentEvent): void {
-  if (e.type === "step") ui.step("skills", e.text ?? "");
-  else if (e.type === "tool") ui.tool(e.tool ?? "?", e.detail ?? "");
-  else if (e.type === "assistant" && e.text) ui.log(ui.dim(e.text));
-  else if (e.type === "done") {
+  if (e.type !== "thinking" && activeSpinner) {
+    activeSpinner.stop();
+    activeSpinner = null;
+  }
+
+  if (e.type === "thinking") {
+    activeSpinner = ui.spinner("thinking…");
+  } else if (e.type === "step") {
+    ui.step("skills", e.text ?? "");
+  } else if (e.type === "tool") {
+    ui.tool(e.tool ?? "?", e.detail ?? "");
+  } else if (e.type === "assistant" && e.text) {
+    ui.log(renderMarkdown(e.text));
+  } else if (e.type === "done") {
     ui.log();
-    ui.ok(e.text ?? "done");
+    ui.log(renderMarkdown(e.text ?? ""));
+    if (e.stats) ui.log(formatStats(e.stats));
   }
 }

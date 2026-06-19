@@ -29,6 +29,17 @@ export interface ChatOptions {
   maxTokens?: number;
 }
 
+export interface Usage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+export interface ChatResult {
+  message: ChatMessage;
+  usage?: Usage;
+}
+
 /** Thin OpenAI-compatible client. Zero deps, native fetch. */
 export class Provider {
   constructor(private cfg: LemaConfig) {}
@@ -63,7 +74,7 @@ export class Provider {
     return chat;
   }
 
-  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatMessage> {
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
     const model = await this.resolveModel();
     const body: Record<string, unknown> = {
       model,
@@ -76,7 +87,7 @@ export class Provider {
       body.tool_choice = "auto";
     }
     const json = await this.post("/chat/completions", body);
-    return json.choices[0].message as ChatMessage;
+    return { message: json.choices[0].message as ChatMessage, usage: json.usage as Usage | undefined };
   }
 
   /** Embed texts for skill retrieval. */

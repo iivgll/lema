@@ -104,7 +104,6 @@ async function dispatch(session: Session, raw: string): Promise<boolean> {
 }
 
 async function runTask(session: Session, task: string): Promise<void> {
-  ui.log();
   await runAgent(task, {
     cfg: session.cfg,
     provider: session.provider,

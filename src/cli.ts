@@ -90,7 +90,7 @@ async function chat(provider: Provider) {
     const input = await rl.question(ui.cyan("you ▸ "));
     if (!input.trim()) continue;
     messages.push({ role: "user", content: input });
-    const reply = await provider.chat(messages);
+    const { message: reply } = await provider.chat(messages);
     messages.push(reply);
     ui.log(ui.bold("lema ▸ ") + (reply.content ?? ""));
   }
