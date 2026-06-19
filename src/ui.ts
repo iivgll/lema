@@ -9,7 +9,9 @@ export const yellow = c("33");
 export const red = c("31");
 export const magenta = c("35");
 
-export const log = (s = "") => process.stdout.write(s + "\n");
+export const log = (s = ""): void => {
+  process.stdout.write(s + "\n");
+};
 export const step = (label: string, detail = "") => log(`${cyan("●")} ${bold(label)} ${dim(detail)}`);
 export const tool = (name: string, detail: string) => log(`  ${magenta("→")} ${name} ${dim(detail)}`);
 export const ok = (s: string) => log(`${green("✓")} ${s}`);

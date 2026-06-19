@@ -4,13 +4,15 @@ import { loadConfig } from "./config.js";
 import { Provider, type ChatMessage } from "./provider.js";
 import { SkillStore } from "./skills.js";
 import { runAgent, consoleRenderer } from "./agent.js";
+import { startRepl } from "./repl.js";
 import * as ui from "./ui.js";
 
 const HELP = `${ui.bold("lema")} — a local, self-improving agentic CLI
 
 ${ui.bold("Usage")}
-  lema "<task>"            Run the agent on a task in the current directory
-  lema chat                Start an interactive chat (no tools)
+  lema                     Open the interactive session (type, or / for commands)
+  lema "<task>"            Run the agent on a single task, then exit
+  lema chat                Start a plain chat (no tools)
   lema models              List models exposed by the local server
   lema skills              List stored skills
   lema ping                Check the local server is reachable
@@ -26,8 +28,14 @@ async function main() {
   const cfg = loadConfig();
   const provider = new Provider(cfg);
 
-  if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h") {
+  if (argv[0] === "--help" || argv[0] === "-h") {
     ui.log(HELP);
+    return;
+  }
+
+  // Bare `lema` opens the interactive session (Claude-style).
+  if (argv.length === 0) {
+    await startRepl(cfg, provider);
     return;
   }
 
