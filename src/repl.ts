@@ -1,4 +1,3 @@
-import { createInterface, type Interface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -7,6 +6,7 @@ import type { LemaConfig } from "./config.js";
 import { Provider } from "./provider.js";
 import { SkillStore } from "./skills.js";
 import { runAgent, consoleRenderer } from "./agent.js";
+import { runTui, type TuiCommand } from "./tui.js";
 import * as ui from "./ui.js";
 
 interface Session {
@@ -73,14 +73,6 @@ function printMenu(): void {
   }
 }
 
-/** TAB completion for slash commands. */
-function completer(line: string): [string[], string] {
-  if (!line.startsWith("/")) return [[], line];
-  const all = COMMANDS.map((c) => "/" + c.name);
-  const hits = all.filter((c) => c.startsWith(line));
-  return [hits.length ? hits : all, line];
-}
-
 function version(): string {
   try {
     const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), "../package.json");
@@ -88,11 +80,6 @@ function version(): string {
   } catch {
     return "0.0.0";
   }
-}
-
-function rule(): string {
-  const width = Math.min(stdout.columns || 64, 80);
-  return ui.dim("─".repeat(width));
 }
 
 function banner(model: string): void {
@@ -104,17 +91,6 @@ function banner(model: string): void {
   ui.log("  " + ui.magenta("│     │") + "   " + ui.dim(process.cwd()));
   ui.log("  " + ui.magenta("╰─────╯"));
   ui.log();
-  ui.log(rule());
-  ui.log(
-    ui.dim("  ? ") +
-      ui.cyan("/help") +
-      ui.dim(" for commands · ") +
-      ui.cyan("tab") +
-      ui.dim(" to autocomplete · ") +
-      ui.cyan("/exit") +
-      ui.dim(" to quit"),
-  );
-  ui.log(rule());
 }
 
 async function dispatch(session: Session, raw: string): Promise<boolean> {
@@ -179,50 +155,12 @@ export async function startRepl(cfg: LemaConfig, provider: Provider): Promise<vo
     return;
   }
 
-  const rl: Interface = createInterface({
-    input: stdin,
-    output: stdout,
-    completer,
-    prompt: ui.magenta("› "),
-  });
-  rl.on("SIGINT", () => rl.close());
-
-  // Queue lines from the 'line' event and drain them one at a time. Using the
-  // event (not `for await`) is what keeps piped/pasted input from being dropped.
-  await new Promise<void>((resolve) => {
-    const queue: string[] = [];
-    let processing = false;
-    let closed = false;
-    let done = false;
-
-    const finish = () => {
-      if (done) return;
-      done = true;
-      rl.close();
-      resolve();
-    };
-
-    const pump = async () => {
-      if (processing) return;
-      processing = true;
-      while (queue.length) {
-        if (await handle(session, queue.shift()!)) return finish();
-        if (!done && !closed) rl.prompt();
-      }
-      processing = false;
-      if (closed) finish();
-    };
-
-    rl.on("line", (line) => {
-      queue.push(line);
-      void pump();
-    });
-    rl.on("close", () => {
-      closed = true;
-      if (!processing && queue.length === 0) finish();
-    });
-
-    rl.prompt();
+  const tuiCommands: TuiCommand[] = COMMANDS.map((c) => ({ name: c.name, desc: c.desc }));
+  await runTui({
+    commands: tuiCommands,
+    footerRight: `${model} · local`,
+    placeholder: 'Try "add a /health route and a test"  ·  / for commands',
+    onSubmit: (line) => handle(session, line),
   });
 
   ui.log(ui.dim("bye"));
