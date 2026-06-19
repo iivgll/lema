@@ -1,5 +1,8 @@
 import { createInterface, type Interface } from "node:readline";
 import { stdin, stdout } from "node:process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import type { LemaConfig } from "./config.js";
 import { Provider } from "./provider.js";
 import { SkillStore } from "./skills.js";
@@ -78,12 +81,40 @@ function completer(line: string): [string[], string] {
   return [hits.length ? hits : all, line];
 }
 
+function version(): string {
+  try {
+    const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), "../package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+function rule(): string {
+  const width = Math.min(stdout.columns || 64, 80);
+  return ui.dim("─".repeat(width));
+}
+
 function banner(model: string): void {
+  const v = ui.dim("v" + version());
   ui.log();
-  ui.log("  " + ui.bold("lema") + ui.dim("  · local self-improving agent"));
-  ui.log(ui.dim(`  model: ${model}    cwd: ${process.cwd()}`));
-  ui.log(ui.dim("  type a task, or ") + ui.cyan("/") + ui.dim(" for commands (TAB to autocomplete)."));
+  ui.log("  " + ui.magenta("╭─────╮"));
+  ui.log("  " + ui.magenta("│     │") + "   " + ui.bold("lema") + "  " + v);
+  ui.log("  " + ui.magenta("│  ") + ui.bold(ui.magenta("λ")) + ui.magenta("  │") + "   " + model + ui.dim(" · local"));
+  ui.log("  " + ui.magenta("│     │") + "   " + ui.dim(process.cwd()));
+  ui.log("  " + ui.magenta("╰─────╯"));
   ui.log();
+  ui.log(rule());
+  ui.log(
+    ui.dim("  ? ") +
+      ui.cyan("/help") +
+      ui.dim(" for commands · ") +
+      ui.cyan("tab") +
+      ui.dim(" to autocomplete · ") +
+      ui.cyan("/exit") +
+      ui.dim(" to quit"),
+  );
+  ui.log(rule());
 }
 
 async function dispatch(session: Session, raw: string): Promise<boolean> {
@@ -152,7 +183,7 @@ export async function startRepl(cfg: LemaConfig, provider: Provider): Promise<vo
     input: stdin,
     output: stdout,
     completer,
-    prompt: ui.cyan("lema ▸ "),
+    prompt: ui.magenta("› "),
   });
   rl.on("SIGINT", () => rl.close());
 
