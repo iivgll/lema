@@ -9,8 +9,8 @@ export interface TuiCommand {
 
 export interface TuiOptions {
   commands: TuiCommand[];
-  /** Right-aligned text in the footer, e.g. "model · local". */
-  footerRight: string;
+  /** Right-aligned footer text, read on every repaint so it can change over time. */
+  footerRight: () => string;
   /** Dim hint shown when the input is empty. */
   placeholder: string;
   /** Called on Enter. Output is printed normally (raw mode is off). Return true to quit. */
@@ -75,7 +75,7 @@ export async function runTui(opts: TuiOptions): Promise<void> {
 
   const footer = (w: number): string => {
     const left = " ? for shortcuts · /exit to quit";
-    let right = opts.footerRight + " ";
+    let right = opts.footerRight() + " ";
     let pad = w - left.length - right.length;
     if (pad < 1) {
       right = right.slice(0, Math.max(0, w - left.length - 1)) + " ";

@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import type { LemaConfig } from "./config.js";
 import { Provider } from "./provider.js";
 import { SkillStore } from "./skills.js";
-import { runAgent, consoleRenderer } from "./agent.js";
+import { runAgent, consoleRenderer, formatStats, type AgentStats } from "./agent.js";
 import { runTui, type TuiCommand } from "./tui.js";
 import * as ui from "./ui.js";
 
@@ -13,6 +13,8 @@ interface Session {
   cfg: LemaConfig;
   provider: Provider;
   skills: SkillStore;
+  /** Called with the stats of each completed run (the TUI shows them in the footer). */
+  onStats?: (s: AgentStats) => void;
 }
 
 /** A slash command. Adding one must not require touching the REPL loop (open/closed). */
@@ -109,7 +111,10 @@ async function runTask(session: Session, task: string): Promise<void> {
     provider: session.provider,
     cwd: process.cwd(),
     skills: session.skills,
-    onEvent: consoleRenderer,
+    onEvent: (e) => {
+      consoleRenderer(e);
+      if (e.type === "done" && e.stats) session.onStats?.(e.stats);
+    },
   });
   ui.log();
 }
@@ -154,10 +159,16 @@ export async function startRepl(cfg: LemaConfig, provider: Provider): Promise<vo
     return;
   }
 
+  // The footer starts with the model, then switches to live token stats after each run.
+  let footerRight = `${model} · local`;
+  session.onStats = (s) => {
+    footerRight = formatStats(s);
+  };
+
   const tuiCommands: TuiCommand[] = COMMANDS.map((c) => ({ name: c.name, desc: c.desc }));
   await runTui({
     commands: tuiCommands,
-    footerRight: `${model} · local`,
+    footerRight: () => footerRight,
     placeholder: 'Try "add a /health route and a test"  ·  / for commands',
     onSubmit: (line) => {
       // Echo the submitted line into the transcript so the user sees what they sent.

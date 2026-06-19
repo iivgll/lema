@@ -150,15 +150,11 @@ function summarizeArgs(args: Record<string, any>): string {
   return Object.keys(args).join(", ");
 }
 
-function formatStats(s: AgentStats): string {
-  const parts = [
-    `↑ ${s.prompt}`,
-    `↓ ${s.completion}`,
-    `${s.tokps.toFixed(1)} tok/s`,
-    `${s.seconds.toFixed(1)}s`,
-  ];
+/** Compact one-line stats for the pinned footer. Plain text; the caller styles it. */
+export function formatStats(s: AgentStats): string {
+  const parts = [`↑ ${s.prompt}`, `↓ ${s.completion}`, `${s.tokps.toFixed(1)} tok/s`];
   if (s.ctx) parts.push(`ctx ${s.ctx}`);
-  return ui.dim("  " + parts.join("  ·  "));
+  return parts.join("  ·  ");
 }
 
 let activeSpinner: ui.SpinHandle | null = null;
@@ -181,6 +177,5 @@ export function consoleRenderer(e: AgentEvent): void {
   } else if (e.type === "done") {
     ui.log();
     ui.log(renderMarkdown(e.text ?? ""));
-    if (e.stats) ui.log(formatStats(e.stats));
   }
 }
