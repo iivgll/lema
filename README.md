@@ -27,7 +27,18 @@ Early. Working today:
 
 Next: automatic skill creation after verified tasks, an evolving playbook, and a bench/autotuner.
 
-## Install (dev)
+## Install
+
+```bash
+# global — gives you the `lema` command
+npm install -g @iivgll4/lema
+lema --help
+
+# or one-off
+npx @iivgll4/lema --help
+```
+
+### Dev
 
 ```bash
 npm install
