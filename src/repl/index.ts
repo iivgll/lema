@@ -145,7 +145,6 @@ function tuiRenderer(tui: Tui): (e: AgentEvent) => void {
     else if (e.type === "tool") ui.tool(e.tool ?? "?", e.detail ?? "");
     else if (e.type === "assistant" && e.text) ui.log(renderMarkdown(e.text));
     else if (e.type === "done") {
-      ui.log();
       ui.log(renderMarkdown(e.text ?? ""));
     }
   };

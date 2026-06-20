@@ -43,7 +43,14 @@ export class Tui {
 
   print(s: string): void {
     this.eraseInputBox();
-    for (const line of s.split("\n")) stdout.write(line + "\r\n");
+    // Trim leading/trailing blank lines: models often wrap responses in \n,
+    // and ui.log("") produces "" which would otherwise render as an empty row.
+    const lines = s.split("\n");
+    let start = 0;
+    let end = lines.length - 1;
+    while (start <= end && lines[start].trim() === "") start++;
+    while (end >= start && lines[end].trim() === "") end--;
+    for (let i = start; i <= end; i++) stdout.write(lines[i] + "\r\n");
     this.drawInputBox();
   }
 
