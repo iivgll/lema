@@ -176,6 +176,10 @@ export class Tui {
   private pasteBuf = ""; // accumulates paste content across chunks
   private pastes = new Map<number, string>(); // id -> full pasted text
   private pasteCounter = 0;
+  // Modal picker (e.g. /models): when set, keys drive the list, not the editor.
+  private overlay: { title: string; items: string[]; selected: number; resolve: (v: string | null) => void } | null = null;
+  // Cache the wrapped transcript so typing doesn't re-wrap the whole history each keystroke.
+  private wrapCache: { w: number; len: number; lines: string[] } | null = null;
   private resolveDone: () => void = () => {};
 
   constructor(private opts: TuiOptions) {}
@@ -207,6 +211,22 @@ export class Tui {
       }
     }
     this.schedule();
+  }
+
+  /** Open a modal picker; resolves to the chosen item, or null if cancelled. */
+  select(title: string, items: string[]): Promise<string | null> {
+    if (!items.length) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      this.overlay = { title, items, selected: 0, resolve };
+      this.render();
+    });
+  }
+
+  private closeOverlay(value: string | null): void {
+    const ov = this.overlay;
+    this.overlay = null;
+    if (ov) ov.resolve(value);
+    this.render();
   }
 
   async run(): Promise<void> {
@@ -241,6 +261,17 @@ export class Tui {
     if (this.status) {
       const s = ((Date.now() - this.spinT0) / 1000).toFixed(1);
       lines.push("  " + ui.magenta(SPIN[this.spinFrame % SPIN.length]) + " " + ui.dim(`${this.status} ${s}s`));
+    }
+    if (this.overlay) {
+      lines.push("  " + ui.dim(this.overlay.title));
+      const items = this.overlay.items;
+      const max = 8;
+      const top = Math.max(0, Math.min(this.overlay.selected - (max >> 1), items.length - max));
+      for (let i = top; i < Math.min(items.length, top + max); i++) {
+        const sel = i === this.overlay.selected;
+        const label = items[i].length > w - 6 ? items[i].slice(0, w - 7) + "…" : items[i];
+        lines.push("  " + (sel ? ui.magenta("❯ ") + ui.bold(label) : "  " + ui.dim(label)));
+      }
     }
     const dash = Math.max(0, w - 2);
     const { line: mid, col } = this.inputLine(w);
@@ -287,7 +318,10 @@ export class Tui {
     const region = this.inputRegion(w);
     const bodyH = Math.max(0, rows - region.lines.length);
 
-    const all = [...this.opts.header(), ...this.transcript].flatMap((l) => wrap(l, w));
+    if (!this.wrapCache || this.wrapCache.w !== w || this.wrapCache.len !== this.transcript.length) {
+      this.wrapCache = { w, len: this.transcript.length, lines: this.transcript.flatMap((l) => wrap(l, w)) };
+    }
+    const all = [...this.opts.header().flatMap((l) => wrap(l, w)), ...this.wrapCache.lines];
     const maxScroll = Math.max(0, all.length - bodyH);
     if (this.scroll > maxScroll) this.scroll = maxScroll;
     this.lastBodyH = bodyH;
@@ -435,6 +469,17 @@ export class Tui {
     }
     if (key.name === "pageup") return this.scrollBy(Math.max(1, this.lastBodyH - 2));
     if (key.name === "pagedown") return this.scrollBy(-Math.max(1, this.lastBodyH - 2));
+
+    // A modal picker captures navigation while it's open (even during a command).
+    if (this.overlay) {
+      const n = this.overlay.items.length;
+      if (key.name === "up") this.overlay.selected = (this.overlay.selected - 1 + n) % n;
+      else if (key.name === "down") this.overlay.selected = (this.overlay.selected + 1) % n;
+      else if (key.name === "return") return this.closeOverlay(this.overlay.items[this.overlay.selected]);
+      else if (key.name === "escape" || (key.ctrl && key.name === "c")) return this.closeOverlay(null);
+      else return;
+      return this.render();
+    }
 
     if (this.busy) return;
     const ms = this.matches();

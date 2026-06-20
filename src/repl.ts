@@ -18,6 +18,10 @@ interface Session {
   onStats?: (s: AgentStats) => void;
   /** Renderer for agent events (the TUI swaps in its own; batch uses the console). */
   render?: (e: AgentEvent) => void;
+  /** Open a modal picker (TUI only); resolves to the chosen item or null. */
+  select?: (title: string, items: string[]) => Promise<string | null>;
+  /** Switch the active model and update the footer. */
+  setModel?: (id: string) => void;
 }
 
 /** A slash command. Adding one must not require touching the REPL loop (open/closed). */
@@ -33,10 +37,19 @@ const COMMANDS: SlashCommand[] = [
   { name: "help", aliases: ["?"], desc: "show available commands", run: () => printMenu() },
   {
     name: "models",
-    desc: "list models on the server",
+    desc: "list or switch the model",
     run: async (s) => {
-      const models = await s.provider.listModels();
-      models.forEach((m) => ui.log("  " + m));
+      const models = (await s.provider.listModels()).filter((m) => !/embed/i.test(m));
+      if (!models.length) return ui.warn("no chat models on the server");
+      if (s.select) {
+        const pick = await s.select("Select a model  (↑/↓ · Enter · Esc)", models);
+        if (pick) {
+          s.setModel?.(pick);
+          ui.ok(`model → ${pick}`);
+        }
+      } else {
+        models.forEach((m) => ui.log("  " + m));
+      }
     },
   },
   {
@@ -197,6 +210,11 @@ export async function startRepl(cfg: LemaConfig, provider: Provider): Promise<vo
 
   // Capture all transcript output into the TUI, and route agent events to it.
   session.render = tuiRenderer(tui);
+  session.select = (title, items) => tui.select(title, items);
+  session.setModel = (id) => {
+    cfg.model = id;
+    footerRight = `${id} · local`;
+  };
   ui.setSink((s) => tui.print(s));
   try {
     await tui.run();
