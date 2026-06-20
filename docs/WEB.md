@@ -80,12 +80,14 @@ string, never throw past their own handler, teaching errors on failure.
 
 ## Placement & config
 
-Web tools are **off by default** behind a flag, so they don't crowd the code toolset and
-drop tool-selection accuracy on coding tasks (the 7±2 rule from [TOOLS.md](TOOLS.md)):
+Web tools live behind a `tools.web` flag — kept flag-gated so they can be turned off when a
+session is purely code work (the 7±2 rule from [TOOLS.md](TOOLS.md)); with the two web tools
+on, the set is 9, still inside the budget. **Default is on.** Toggle at runtime with
+`/settings web on|off`, or persist in config:
 
 ```jsonc
 // lema.config.json
-{ "tools": { "web": true } }   // default false
+{ "tools": { "web": true } }   // default true; set false to disable
 ```
 
 When off, `web_search`/`web_fetch` are not registered in `ALL_TOOLS`. When on, they join
