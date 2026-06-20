@@ -76,7 +76,7 @@ export function buildInputLines(
 }
 
 function buildFooter(opts: TuiOptions, scroll: number, w: number): string {
-  const left = scroll > 0 ? " ↓ scroll down / PageDown for latest" : " ? for shortcuts · /exit to quit";
+  const left = scroll > 0 ? " ↓ ↑↓/PgDn to scroll · Ctrl+P/N history" : " ↑↓ scroll · Ctrl+P/N history · /exit to quit";
   let right = opts.footerRight() + " ";
   let pad = w - left.length - vlen(right);
   if (pad < 1) { right = right.slice(0, Math.max(0, w - left.length - 1)) + " "; pad = 1; }

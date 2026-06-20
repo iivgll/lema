@@ -68,7 +68,7 @@ export class Tui {
     if (stdin.isTTY) stdin.setRawMode(true);
     stdin.setEncoding("utf8");
     stdin.resume();
-    stdout.write("\x1b[?1049h\x1b[2J\x1b[?1000h\x1b[?1006h\x1b[?2004h");
+    stdout.write("\x1b[?1049h\x1b[2J\x1b[?1007h\x1b[?2004h");
     stdin.on("data", this.onData);
     stdout.on("resize", this.onResize);
     this.render();
@@ -156,10 +156,6 @@ export class Tui {
 
   private handleKey(key: ParsedKey): void {
     const st = this.state;
-    if (key.mouse !== undefined) {
-      if (key.mouse & 64) this.scrollBy(key.mouse & 1 ? -3 : 3);
-      return;
-    }
     if (key.name === "pageup") return this.scrollBy(Math.max(1, this.lastBodyH - 2));
     if (key.name === "pagedown") return this.scrollBy(-Math.max(1, this.lastBodyH - 2));
 
@@ -191,8 +187,13 @@ export class Tui {
     else if (key.name === "right")   { if (st.cursor < st.buf.length) st.cursor++; }
     else if (key.name === "home" || (key.ctrl && key.name === "a")) { st.cursor = 0; }
     else if (key.name === "end"  || (key.ctrl && key.name === "e")) { st.cursor = st.buf.length; }
-    else if (key.name === "up")   { if (ms.length) st.selected = (st.selected - 1 + ms.length) % ms.length; else this.recallHistory(-1); }
-    else if (key.name === "down") { if (ms.length) st.selected = (st.selected + 1) % ms.length; else this.recallHistory(1); }
+    // up/down scroll the viewport (scroll wheel → arrows via ?1007h alternate scroll mode)
+    // command-popup navigation stays on up/down when popup is visible
+    else if (key.name === "up")   { if (ms.length) st.selected = (st.selected - 1 + ms.length) % ms.length; else return this.scrollBy(3); }
+    else if (key.name === "down") { if (ms.length) st.selected = (st.selected + 1) % ms.length; else return this.scrollBy(-3); }
+    // history navigation via Ctrl+P / Ctrl+N
+    else if (key.ctrl && key.name === "p") { this.recallHistory(-1); }
+    else if (key.ctrl && key.name === "n") { this.recallHistory(1); }
     else if (key.name === "tab") {
       if (ms.length) { st.buf = "/" + ms[st.selected].name + " "; st.cursor = st.buf.length; st.selected = 0; }
     } else if (key.str && !key.ctrl && !key.meta && key.str >= " ") {
@@ -230,7 +231,7 @@ export class Tui {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     stdin.off("data", this.onData);
     stdout.off("resize", this.onResize);
-    stdout.write("\x1b[?2004l\x1b[?1000l\x1b[?1006l\x1b[?2026l\x1b[?7h\x1b[?1049l");
+    stdout.write("\x1b[?2004l\x1b[?1007l\x1b[?2026l\x1b[?7h\x1b[?1049l");
     if (stdin.isTTY) stdin.setRawMode(false);
     stdin.pause();
     this.resolveDone();
