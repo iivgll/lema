@@ -43,7 +43,7 @@ export class Tui {
 
   print(s: string): void {
     this.eraseInputBox();
-    for (const line of s.split("\n")) stdout.write(line + "\n");
+    for (const line of s.split("\n")) stdout.write(line + "\r\n");
     this.drawInputBox();
   }
 
@@ -74,7 +74,7 @@ export class Tui {
     // Bracketed paste only; no alternate screen so terminal scrollback works normally.
     stdout.write("\x1b[?2004h");
     // Print header into the normal buffer.
-    for (const line of this.opts.header()) stdout.write(line + "\n");
+    for (const line of this.opts.header()) stdout.write(line + "\r\n");
     stdin.on("data", this.onData);
     stdout.on("resize", this.onResize);
     this.drawInputBox();
@@ -85,9 +85,9 @@ export class Tui {
 
   private eraseInputBox(): void {
     if (this.lastCursorRowInBox === 0 && !this._hasBox) return;
-    // Cursor is at lastCursorRowInBox within the box — move up that many rows to reach the top.
+    // Move up to the top of the box, return to col 0, erase to end of screen.
     if (this.lastCursorRowInBox > 0) stdout.write(`\x1b[${this.lastCursorRowInBox}A`);
-    stdout.write("\x1b[J");
+    stdout.write("\r\x1b[J");
     this.lastCursorRowInBox = 0;
     this._hasBox = false;
   }

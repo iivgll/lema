@@ -122,16 +122,17 @@ export function buildInputBox(
   const inputOffset = lines.length + 1 + cursorRow;
   lines.push(ui.magenta("╭" + "─".repeat(dash) + "╮"), ...midLines, ui.magenta("╰" + "─".repeat(dash) + "╯"), buildFooter(opts, w));
 
-  // Build escape sequence: erase each line, then position cursor on input row
-  let out = "\x1b[?2026h";
+  // Build escape sequence using \r\n (raw mode: \n is LF only, no CR).
+  // Start at column 0, write each line, erase remainder of line, advance with \r\n.
+  let out = "\x1b[?2026h\r";
   for (let r = 0; r < lines.length; r++) {
     out += lines[r] + "\x1b[K";
-    if (r < lines.length - 1) out += "\n";
+    if (r < lines.length - 1) out += "\r\n";
   }
-  // Move cursor back up to the input row and to the correct column
+  // Move cursor back up to the input row and to the correct column.
   const rowsBelow = lines.length - 1 - inputOffset;
   if (rowsBelow > 0) out += `\x1b[${rowsBelow}A`;
-  out += `\x1b[${cursorCol}G`;
+  out += `\r\x1b[${cursorCol}G`;
   out += "\x1b[?2026l";
 
   return { out, totalLines: lines.length, cursorRowInBox: inputOffset };
