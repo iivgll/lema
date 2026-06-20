@@ -49,6 +49,12 @@ code:
 - `lema bench`: pass@1 and tok/s across local models.
 - `lema tune <model>`: sweep temperature / top_p, write results to config.
 
+## Context management
+
+How lema stays inside a small local window (masking-first, ACC-lite): see
+[CONTEXT.md](CONTEXT.md). Lands alongside Phase 1 — a long task can't close the
+verification loop if it overflows the window first.
+
 ## Backlog / later
 - Chat mode with optional tool access.
 - Plugins and hooks for custom tools and verifiers.
