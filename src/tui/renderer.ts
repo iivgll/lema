@@ -88,7 +88,7 @@ export function buildInputBox(
   opts: TuiOptions,
   state: RenderState,
   w: number,
-): { out: string; totalLines: number } {
+): { out: string; totalLines: number; cursorRowInBox: number } {
   const lines: string[] = [];
   const ms = matchCommands(opts.commands, state.buf);
   const sel = Math.min(state.selected, Math.max(0, ms.length - 1));
@@ -134,5 +134,5 @@ export function buildInputBox(
   out += `\x1b[${cursorCol}G`;
   out += "\x1b[?2026l";
 
-  return { out, totalLines: lines.length };
+  return { out, totalLines: lines.length, cursorRowInBox: inputOffset };
 }

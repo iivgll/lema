@@ -33,8 +33,9 @@ export class Tui {
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private paste = new PasteBuffer();
   private resolveDone: () => void = () => {};
-  /** How many terminal lines the input box currently occupies. */
-  private lastInputH = 0;
+  /** Row of the hardware cursor within the rendered input box (0 = top line of box). */
+  private lastCursorRowInBox = 0;
+  private _hasBox = false;
 
   constructor(private opts: TuiOptions) {}
 
@@ -83,16 +84,19 @@ export class Tui {
   // ---- rendering -----------------------------------------------------------
 
   private eraseInputBox(): void {
-    if (this.lastInputH === 0) return;
-    // Move up to the first line of the input box and erase from there down.
-    stdout.write(`\x1b[${this.lastInputH}A\x1b[J`);
-    this.lastInputH = 0;
+    if (this.lastCursorRowInBox === 0 && !this._hasBox) return;
+    // Cursor is at lastCursorRowInBox within the box — move up that many rows to reach the top.
+    if (this.lastCursorRowInBox > 0) stdout.write(`\x1b[${this.lastCursorRowInBox}A`);
+    stdout.write("\x1b[J");
+    this.lastCursorRowInBox = 0;
+    this._hasBox = false;
   }
 
   private drawInputBox(): void {
     const w = Math.max(stdout.columns || 80, 24);
-    const { out, totalLines } = buildInputBox(this.opts, this.state, w);
-    this.lastInputH = totalLines;
+    const { out, cursorRowInBox } = buildInputBox(this.opts, this.state, w);
+    this.lastCursorRowInBox = cursorRowInBox;
+    this._hasBox = true;
     stdout.write(out);
   }
 
