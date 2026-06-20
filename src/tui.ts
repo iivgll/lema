@@ -107,6 +107,12 @@ export interface TuiOptions {
 const ESC_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const MAX_POPUP = 6;
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+// A multi-line or long paste collapses into this placeholder instead of flooding
+// the input; the real text is kept and expanded back on submit.
+const PASTE_LINE_LIMIT = 1;
+const PASTE_CHAR_LIMIT = 200;
 
 /** Visible length, ignoring ANSI escape sequences. */
 function vlen(s: string): number {
@@ -166,6 +172,10 @@ export class Tui {
   private lastBodyH = 10;
   private inbuf = ""; // raw stdin accumulator for partial escape sequences
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
+  private pasting = false; // inside a bracketed-paste block
+  private pasteBuf = ""; // accumulates paste content across chunks
+  private pastes = new Map<number, string>(); // id -> full pasted text
+  private pasteCounter = 0;
   private resolveDone: () => void = () => {};
 
   constructor(private opts: TuiOptions) {}
@@ -203,8 +213,8 @@ export class Tui {
     if (stdin.isTTY) stdin.setRawMode(true);
     stdin.setEncoding("utf8");
     stdin.resume();
-    // Enter the alternate screen and enable SGR mouse reporting (for wheel scroll).
-    stdout.write("\x1b[?1049h\x1b[2J\x1b[?1000h\x1b[?1006h");
+    // Alternate screen + SGR mouse reporting (wheel scroll) + bracketed paste.
+    stdout.write("\x1b[?1049h\x1b[2J\x1b[?1000h\x1b[?1006h\x1b[?2004h");
     stdin.on("data", this.onData);
     stdout.on("resize", this.onResize);
     this.render();
@@ -334,18 +344,88 @@ export class Tui {
       this.flushTimer = undefined;
     }
     this.inbuf += chunk;
+    this.drain();
+  };
+
+  /** Pull out bracketed-paste blocks, then process the rest as keys. */
+  private drain(): void {
+    for (;;) {
+      if (this.pasting) {
+        const end = this.inbuf.indexOf(PASTE_END);
+        if (end === -1) {
+          this.pasteBuf += this.inbuf;
+          this.inbuf = "";
+          return;
+        }
+        this.pasteBuf += this.inbuf.slice(0, end);
+        this.inbuf = this.inbuf.slice(end + PASTE_END.length);
+        this.pasting = false;
+        const content = this.pasteBuf;
+        this.pasteBuf = "";
+        this.handlePaste(content);
+        continue;
+      }
+      const start = this.inbuf.indexOf(PASTE_START);
+      if (start === -1) break;
+      this.feedKeys(this.inbuf.slice(0, start));
+      this.inbuf = this.inbuf.slice(start + PASTE_START.length);
+      this.pasting = true;
+    }
+
     const { sequences, remainder } = extractSequences(this.inbuf);
     this.inbuf = remainder;
     for (const seq of sequences) this.handleKey(parseSeq(seq));
-    if (remainder) {
-      // A lone ESC or a partial sequence — flush it shortly (e.g. the Escape key).
+    // A lone ESC has no follow-up; flush it shortly as the Escape key. Other
+    // partials (incl. a split paste marker) stay buffered until more bytes come.
+    if (remainder === "\x1b") {
       this.flushTimer = setTimeout(() => {
-        const pending = this.inbuf;
-        this.inbuf = "";
-        if (pending) this.handleKey(parseSeq(pending));
+        if (this.inbuf === "\x1b") {
+          this.inbuf = "";
+          this.handleKey({ name: "escape" });
+        }
       }, 20);
     }
-  };
+  }
+
+  private feedKeys(segment: string): void {
+    const { sequences } = extractSequences(segment);
+    for (const seq of sequences) this.handleKey(parseSeq(seq));
+  }
+
+  private insertText(s: string): void {
+    this.buf = this.buf.slice(0, this.cursor) + s + this.buf.slice(this.cursor);
+    this.cursor += s.length;
+  }
+
+  /** A paste: small ones go inline; large/multi-line ones become a placeholder. */
+  private handlePaste(raw: string): void {
+    if (this.busy) return;
+    const text = raw
+      .replace(/\r\n?/g, "\n")
+      .replace(/\t/g, "  ")
+      .split("")
+      .filter((c) => c === "\n" || c.charCodeAt(0) >= 32)
+      .join("");
+    const lines = text.split("\n");
+    if (lines.length > PASTE_LINE_LIMIT || text.length > PASTE_CHAR_LIMIT) {
+      const id = ++this.pasteCounter;
+      this.pastes.set(id, text);
+      const marker =
+        lines.length > 1 ? `[paste #${id} +${lines.length} lines]` : `[paste #${id} ${text.length} chars]`;
+      this.insertText(marker);
+    } else {
+      this.insertText(text);
+    }
+    this.render();
+  }
+
+  /** Expand `[paste #N …]` placeholders back to their real content for submit. */
+  private expandPastes(line: string): string {
+    return line.replace(/\[paste #(\d+) (?:\+\d+ lines|\d+ chars)\]/g, (m, id) => {
+      const content = this.pastes.get(Number(id));
+      return content !== undefined ? content : m;
+    });
+  }
 
   private handleKey(key: ParsedKey): void {
     // Scrolling is allowed even while the agent is generating.
@@ -409,15 +489,17 @@ export class Tui {
   }
 
   private async submit(): Promise<void> {
-    const line = this.buf.trim();
+    const shown = this.buf.trim(); // what the user sees, with [paste …] placeholders
+    const line = this.expandPastes(shown).trim(); // what the agent receives
     this.buf = "";
     this.cursor = 0;
     this.selected = 0;
     this.histIdx = null;
     this.scroll = 0; // jump back to the latest output on submit
-    if (line) {
-      this.history.push(line);
-      this.print(ui.magenta("› ") + (line.startsWith("/") ? ui.cyan(line) : line));
+    this.pastes.clear();
+    if (shown) {
+      this.history.push(shown);
+      this.print(ui.magenta("› ") + (shown.startsWith("/") ? ui.cyan(shown) : shown));
     }
     this.busy = true;
     this.render();
@@ -440,8 +522,8 @@ export class Tui {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     stdin.off("data", this.onData);
     stdout.off("resize", this.onResize);
-    // Disable mouse reporting, then leave the alternate screen.
-    stdout.write("\x1b[?1000l\x1b[?1006l\x1b[?2026l\x1b[?7h\x1b[?1049l");
+    // Disable paste + mouse reporting, then leave the alternate screen.
+    stdout.write("\x1b[?2004l\x1b[?1000l\x1b[?1006l\x1b[?2026l\x1b[?7h\x1b[?1049l");
     if (stdin.isTTY) stdin.setRawMode(false);
     stdin.pause();
     this.resolveDone();
