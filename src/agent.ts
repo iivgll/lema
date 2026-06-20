@@ -154,4 +154,3 @@ export function formatStats(s: AgentStats): string {
   if (s.ctx) parts.push(`ctx ${s.ctx}`);
   return parts.join("  ·  ");
 }
-
