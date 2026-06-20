@@ -30,23 +30,49 @@ export function matchCommands(commands: TuiCommand[], buf: string): TuiCommand[]
   return commands.filter((c) => c.name.startsWith(frag)).slice(0, MAX_POPUP);
 }
 
-function buildInputLine(opts: TuiOptions, buf: string, cursor: number, w: number): { line: string; col: number } {
+export function buildInputLines(
+  opts: TuiOptions,
+  buf: string,
+  cursor: number,
+  w: number,
+): { lines: string[]; cursorRow: number; cursorCol: number } {
+  // first line has "› " prefix (2 chars), continuation lines have "  " (2 chars)
+  // box frame takes 4 chars total: "│ " left + " │" right
   const textArea = Math.max(1, w - 6);
-  let shown: string;
-  let curOff: number;
+
   if (buf.length === 0) {
-    shown = ui.dim(opts.placeholder.slice(0, textArea));
-    curOff = 0;
-  } else if (buf.length > textArea) {
-    shown = "…" + buf.slice(buf.length - (textArea - 1));
-    curOff = textArea;
-  } else {
-    shown = buf;
-    curOff = cursor;
+    const shown = ui.dim(opts.placeholder.slice(0, textArea));
+    const pad = " ".repeat(Math.max(0, textArea - Math.min(opts.placeholder.length, textArea)));
+    return {
+      lines: [ui.magenta("│") + " " + ui.magenta("›") + " " + shown + pad + " " + ui.magenta("│")],
+      cursorRow: 0,
+      cursorCol: 5,
+    };
   }
-  const rawLen = buf.length === 0 ? Math.min(opts.placeholder.length, textArea) : Math.min(buf.length, textArea);
-  const pad = " ".repeat(Math.max(0, textArea - rawLen));
-  return { line: ui.magenta("│") + " " + ui.magenta("›") + " " + shown + pad + " " + ui.magenta("│"), col: 5 + curOff };
+
+  // split buf into chunks of textArea, first chunk gets "› " prefix
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < buf.length) {
+    chunks.push(buf.slice(i, i + textArea));
+    i += textArea;
+  }
+  if (chunks.length === 0) chunks.push("");
+
+  const cursorChunk = Math.floor(cursor / textArea);
+  const cursorInChunk = cursor % textArea;
+
+  const lines = chunks.map((chunk, idx) => {
+    const prefix = idx === 0 ? ui.magenta("›") + " " : "  ";
+    const pad = " ".repeat(Math.max(0, textArea - chunk.length));
+    return ui.magenta("│") + " " + prefix + chunk + pad + " " + ui.magenta("│");
+  });
+
+  return {
+    lines,
+    cursorRow: cursorChunk,
+    cursorCol: 5 + cursorInChunk,
+  };
 }
 
 function buildFooter(opts: TuiOptions, scroll: number, w: number): string {
@@ -82,10 +108,10 @@ function buildInputRegion(opts: TuiOptions, state: RenderState, w: number): { li
     }
   }
   const dash = Math.max(0, w - 2);
-  const { line: mid, col } = buildInputLine(opts, state.buf, state.cursor, w);
-  const inputOffset = lines.length + 1;
-  lines.push(ui.magenta("╭" + "─".repeat(dash) + "╮"), mid, ui.magenta("╰" + "─".repeat(dash) + "╯"), buildFooter(opts, state.scroll, w));
-  return { lines, inputOffset, col };
+  const { lines: midLines, cursorRow, cursorCol } = buildInputLines(opts, state.buf, state.cursor, w);
+  const inputOffset = lines.length + 1 + cursorRow;
+  lines.push(ui.magenta("╭" + "─".repeat(dash) + "╮"), ...midLines, ui.magenta("╰" + "─".repeat(dash) + "╯"), buildFooter(opts, state.scroll, w));
+  return { lines, inputOffset, col: cursorCol };
 }
 
 /** Build a full frame and return the terminal escape sequence string to write. */
