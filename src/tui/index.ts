@@ -44,14 +44,12 @@ export class Tui {
 
   print(s: string): void {
     this.eraseInputBox();
-    // Trim leading/trailing blank lines: models often wrap responses in \n,
-    // and ui.log("") produces "" which would otherwise render as an empty row.
+    // Trim only trailing blank lines. Leading blanks are intentional (spacing before responses).
+    // Models often append \n to their text; stripping only the tail avoids double blank lines.
     const lines = s.split("\n");
-    let start = 0;
     let end = lines.length - 1;
-    while (start <= end && lines[start].trim() === "") start++;
-    while (end >= start && lines[end].trim() === "") end--;
-    for (let i = start; i <= end; i++) stdout.write(lines[i] + "\r\n");
+    while (end >= 0 && lines[end].trim() === "") end--;
+    for (let i = 0; i <= end; i++) stdout.write(lines[i] + "\r\n");
     this.drawInputBox();
   }
 

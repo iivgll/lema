@@ -8,6 +8,20 @@ import { SkillStore } from "../skills/index.js";
 import { runAgent, formatStats, type AgentStats, type AgentEvent } from "../agent/index.js";
 import { Tui, type TuiCommand } from "../tui/index.js";
 import { renderMarkdown } from "../tui/markdown.js";
+
+/**
+ * Format an assistant response with a leading blank line, ⏺ on the first line,
+ * and two-space indent on continuation lines — matches Claude Code's visual style.
+ */
+function formatResponse(text: string): string {
+  const rendered = renderMarkdown(text.trim());
+  const lines = rendered.split("\n");
+  const prefixed = lines
+    .map((l, i) => (i === 0 ? ui.magenta("⏺") + " " + l : "  " + l))
+    .join("\n");
+  // Leading \n produces the blank separator line before the response.
+  return "\n" + prefixed;
+}
 import * as ui from "../ui.js";
 
 interface Session {
@@ -143,9 +157,9 @@ function tuiRenderer(tui: Tui): (e: AgentEvent) => void {
     else if (e.type === "thinking-stop") tui.setStatus(null);
     else if (e.type === "step") ui.step("skills", e.text ?? "");
     else if (e.type === "tool") ui.tool(e.tool ?? "?", e.detail ?? "");
-    else if (e.type === "assistant" && e.text) ui.log(renderMarkdown(e.text));
-    else if (e.type === "done") {
-      ui.log(renderMarkdown(e.text ?? ""));
+    else if (e.type === "assistant" && e.text) ui.log(formatResponse(e.text));
+    else if (e.type === "done" && e.text?.trim()) {
+      ui.log(formatResponse(e.text));
     }
   };
 }
