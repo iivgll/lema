@@ -1,4 +1,6 @@
-import type { ChatMessage, ChatOptions, Usage, ChatResult, EmbedOptions, ModelProvider } from "./interface.js";
+import type { ChatMessage, Usage } from "./message.js";
+import type { ChatOptions, ChatResult, EmbedOptions } from "./chat.js";
+import type { ModelProvider } from "./provider.js";
 
 export class BaseProvider implements ModelProvider {
   constructor(
