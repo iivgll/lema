@@ -2,13 +2,13 @@ import { stdin, stdout } from "node:process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import type { LemaConfig } from "./config.js";
-import type { ModelProvider } from "./provider.js";
-import { SkillStore } from "./skills.js";
-import { runAgent, formatStats, type AgentStats, type AgentEvent } from "./agent.js";
-import { Tui, type TuiCommand } from "./tui.js";
-import { renderMarkdown } from "./markdown.js";
-import * as ui from "./ui.js";
+import type { LemaConfig } from "../config.js";
+import type { ModelProvider } from "../provider.js";
+import { SkillStore } from "../skills/index.js";
+import { runAgent, formatStats, type AgentStats, type AgentEvent } from "../agent/index.js";
+import { Tui, type TuiCommand } from "../tui/index.js";
+import { renderMarkdown } from "../tui/markdown.js";
+import * as ui from "../ui.js";
 
 interface Session {
   baseUrl: string;

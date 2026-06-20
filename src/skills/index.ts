@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ModelProvider } from "./provider.js";
-import type { LemaConfig } from "./config.js";
+import type { ModelProvider } from "../provider.js";
+import type { LemaConfig } from "../config.js";
 
 export type SkillKind = "knowledge" | "procedure";
 

@@ -1,6 +1,6 @@
-import type { ModelProvider, ChatMessage } from "./provider.js";
-import { ALL_TOOLS, toolMap, type Tool } from "./tools.js";
-import { SkillStore } from "./skills.js";
+import type { ModelProvider, ChatMessage } from "../provider.js";
+import { ALL_TOOLS, toolMap, type Tool } from "../tools/index.js";
+import { SkillStore } from "../skills/index.js";
 const SYSTEM = `You are lema, a focused local coding agent running on a small local model.
 You operate inside the user's working directory through tools.
 

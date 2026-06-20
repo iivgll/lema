@@ -1,4 +1,4 @@
-import * as ui from "./ui.js";
+import * as ui from "../ui.js";
 
 /**
  * Minimal Markdown → ANSI renderer for assistant output. Handles the subset

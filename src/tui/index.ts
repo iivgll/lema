@@ -1,5 +1,5 @@
 import { stdin, stdout } from "node:process";
-import * as ui from "./ui.js";
+import * as ui from "../ui.js";
 
 /** A normalized key/mouse event parsed from a raw stdin sequence. */
 interface ParsedKey {

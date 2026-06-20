@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { loadConfig } from "./config.js";
 import { Provider } from "./provider.js";
-import { SkillStore } from "./skills.js";
-import { runAgent } from "./agent.js";
-import { startRepl, consoleRenderer } from "./repl.js";
+import { SkillStore } from "./skills/index.js";
+import { runAgent } from "./agent/index.js";
+import { startRepl, consoleRenderer } from "./repl/index.js";
 import * as ui from "./ui.js";
 
 const HELP = `${ui.bold("lema")} — a local, self-improving agentic CLI

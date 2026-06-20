@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { promisify } from "node:util";
-import type { ToolSchema } from "./provider.js";
+import type { ToolSchema } from "../provider.js";
 
 const pexec = promisify(execFile);
 
