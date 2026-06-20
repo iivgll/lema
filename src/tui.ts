@@ -78,6 +78,8 @@ export class Tui {
   private spinT0 = 0;
   private scheduled = false;
   private done = false;
+  private scroll = 0; // lines scrolled up from the bottom; 0 = pinned to latest
+  private lastBodyH = 10;
   private resolveDone: () => void = () => {};
 
   constructor(private opts: TuiOptions) {}
@@ -115,7 +117,8 @@ export class Tui {
     emitKeypressEvents(stdin);
     if (stdin.isTTY) stdin.setRawMode(true);
     stdin.resume();
-    stdout.write("\x1b[?1049h\x1b[2J"); // enter alternate screen
+    // Enter the alternate screen and enable SGR mouse reporting (for wheel scroll).
+    stdout.write("\x1b[?1049h\x1b[2J\x1b[?1000h\x1b[?1006h");
     stdin.on("keypress", this.onKey);
     stdout.on("resize", this.onResize);
     this.render();
@@ -171,7 +174,7 @@ export class Tui {
   }
 
   private footer(w: number): string {
-    const left = " ? for shortcuts · /exit to quit";
+    const left = this.scroll > 0 ? " ↓ scroll down / PageDown for latest" : " ? for shortcuts · /exit to quit";
     let right = this.opts.footerRight() + " ";
     let pad = w - left.length - vlen(right);
     if (pad < 1) {
@@ -189,8 +192,12 @@ export class Tui {
     const bodyH = Math.max(0, rows - region.lines.length);
 
     const all = [...this.opts.header(), ...this.transcript].flatMap((l) => wrap(l, w));
-    const view = all.slice(Math.max(0, all.length - bodyH));
-    const padCount = bodyH - view.length;
+    const maxScroll = Math.max(0, all.length - bodyH);
+    if (this.scroll > maxScroll) this.scroll = maxScroll;
+    this.lastBodyH = bodyH;
+    const end = all.length - this.scroll;
+    const view = all.slice(Math.max(0, end - bodyH), end);
+    const padCount = Math.max(0, bodyH - view.length);
     const screen = [...view, ...Array(padCount).fill(""), ...region.lines];
 
     // Begin synchronized update, disable wrap, repaint from home.
@@ -228,7 +235,25 @@ export class Tui {
     this.cursor = this.buf.length;
   }
 
+  private scrollBy(delta: number): void {
+    const next = Math.max(0, this.scroll + delta);
+    if (next === this.scroll) return;
+    this.scroll = next;
+    this.render();
+  }
+
   private onKey = (str: string | undefined, key: Key): void => {
+    // Scrolling is allowed even while the agent is generating.
+    const seq = (key && key.sequence) || str || "";
+    const mouse = typeof seq === "string" && seq.match(/\x1b\[<(\d+);\d+;\d+[Mm]/);
+    if (mouse) {
+      const cb = parseInt(mouse[1], 10);
+      if (cb & 64) this.scrollBy(cb & 1 ? -3 : 3); // wheel: bit0 = down
+      return; // swallow all mouse events so clicks never inject text
+    }
+    if (key.name === "pageup") return this.scrollBy(Math.max(1, this.lastBodyH - 2));
+    if (key.name === "pagedown") return this.scrollBy(-Math.max(1, this.lastBodyH - 2));
+
     if (this.busy) return;
     const ms = this.matches();
 
@@ -286,6 +311,7 @@ export class Tui {
     this.cursor = 0;
     this.selected = 0;
     this.histIdx = null;
+    this.scroll = 0; // jump back to the latest output on submit
     if (line) {
       this.history.push(line);
       this.print(ui.magenta("› ") + (line.startsWith("/") ? ui.cyan(line) : line));
@@ -310,7 +336,8 @@ export class Tui {
     if (this.spinTimer) clearInterval(this.spinTimer);
     stdin.off("keypress", this.onKey);
     stdout.off("resize", this.onResize);
-    stdout.write("\x1b[?2026l\x1b[?7h\x1b[?1049l"); // leave alternate screen
+    // Disable mouse reporting, then leave the alternate screen.
+    stdout.write("\x1b[?1000l\x1b[?1006l\x1b[?2026l\x1b[?7h\x1b[?1049l");
     if (stdin.isTTY) stdin.setRawMode(false);
     stdin.pause();
     this.resolveDone();
