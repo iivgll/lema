@@ -63,6 +63,33 @@ describe("readFile", () => {
     // cwd is /tmp/lema-tools-xxx; ../lema-tools-yyy would start with the parent
     await assert.rejects(() => readFile.run({ path: "../lema-evil/x" }, ctx()));
   });
+
+  test("pattern returns only matching windows with line numbers", async () => {
+    writeFileSync(join(cwd, "pat.ts", ), Array.from({ length: 30 }, (_, i) => `line${i + 1}`).join("\n") + "\nTARGET here\nafter");
+    const r = await readFile.run({ path: "pat.ts", pattern: "TARGET", context: 1 }, ctx());
+    assert.match(r, /31:TARGET here/); // 1-based line number + content
+    assert.match(r, /30:line30/);      // one line of context before
+    assert.match(r, /32:after/);       // one line of context after
+    assert.doesNotMatch(r, /line1\b/); // unrelated lines excluded
+  });
+
+  test("pattern merges adjacent matches into one window", async () => {
+    writeFileSync(join(cwd, "merge.ts"), "hit\nhit\nx\ny");
+    const r = await readFile.run({ path: "merge.ts", pattern: "hit", context: 0 }, ctx());
+    assert.doesNotMatch(r, /--/); // adjacent hits collapse, no separator
+  });
+
+  test("pattern reports no matches gracefully", async () => {
+    writeFileSync(join(cwd, "nomatch.ts"), "alpha\nbeta");
+    const r = await readFile.run({ path: "nomatch.ts", pattern: "zzz" }, ctx());
+    assert.match(r, /no lines match/);
+  });
+
+  test("pattern with invalid regex returns error", async () => {
+    writeFileSync(join(cwd, "bad.ts"), "x");
+    const r = await readFile.run({ path: "bad.ts", pattern: "[invalid" }, ctx());
+    assert.match(r, /ERROR.*invalid regex/i);
+  });
 });
 
 // ---------------------------------------------------------------------------

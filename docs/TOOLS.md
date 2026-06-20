@@ -48,7 +48,7 @@ The target set is **seven tools**, named to match pretraining conventions:
 
 | Tool | Job | SLM-specific design |
 |------|-----|---------------------|
-| `read_file(path, offset?, limit?)` | read | range, not whole-file — protects the context budget |
+| `read_file(path, offset?, limit?, pattern?, context?)` | read | range or grep -C style match-windows — protects the context budget |
 | `write_file(path, content)` | create / overwrite | `whole` format: the most reliable for weak models (Aider) |
 | `edit_file(path, old, new)` | targeted change | search/replace for large files; cheaper than a rewrite |
 | `grep(pattern, path?)` | find by content | takes navigation off `bash` |
