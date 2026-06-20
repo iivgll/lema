@@ -18,6 +18,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "node --import tsx src/cli.ts",
     "start": "node dist/cli.js",
+    "test": "node --import tsx/esm --test 'tests/**/*.test.ts'",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
