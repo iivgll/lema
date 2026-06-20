@@ -6,6 +6,7 @@ import type { LemaConfig } from "../config.js";
 import type { ModelProvider } from "../provider.js";
 import { SkillStore } from "../skills/index.js";
 import { runAgent, formatStats, type AgentStats, type AgentEvent } from "../agent/index.js";
+import { ContextManager } from "../context/index.js";
 import { Tui, type TuiCommand } from "../tui/index.js";
 import { renderMarkdown } from "../tui/markdown.js";
 
@@ -29,6 +30,7 @@ interface Session {
   maxSteps: number;
   provider: ModelProvider;
   skills: SkillStore;
+  context: ContextManager;
   /** Called with the stats of each completed run (the TUI shows them in the footer). */
   onStats?: (s: AgentStats) => void;
   /** Renderer for agent events (the TUI swaps in its own; batch uses the console). */
@@ -181,6 +183,7 @@ async function runTask(session: Session, task: string, signal?: AbortSignal): Pr
     provider: session.provider,
     cwd: process.cwd(),
     skills: session.skills,
+    context: session.context,
     signal,
     onEvent: (e) => {
       render(e);
@@ -226,6 +229,7 @@ export async function startRepl(cfg: LemaConfig, provider: ModelProvider): Promi
     maxSteps: cfg.maxSteps,
     provider,
     skills: new SkillStore(cfg, provider),
+    context: new ContextManager({ budget: cfg.context }),
   };
   const model = await provider.resolveModel().catch(() => "(no model loaded)");
 

@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { type ContextBudget, BUDGET_DEFAULTS } from "./context/index.js";
 
 export interface LemaConfig {
   /** OpenAI-compatible base URL (LM Studio, Ollama, llama.cpp, ...). */
@@ -16,6 +17,8 @@ export interface LemaConfig {
   maxSteps: number;
   /** Directory (relative to cwd) where lema keeps skills + playbook. */
   stateDir: string;
+  /** Context-window budget: how lema keeps the conversation inside the model's window. */
+  context: ContextBudget;
 }
 
 export const DEFAULTS: LemaConfig = {
@@ -25,6 +28,7 @@ export const DEFAULTS: LemaConfig = {
   maxTokens: 2048,
   maxSteps: 12,
   stateDir: ".lema",
+  context: BUDGET_DEFAULTS,
 };
 
 /** Load lema.config.json from cwd (if present) merged over defaults + env. */
@@ -35,7 +39,11 @@ export function loadConfig(cwd = process.cwd()): LemaConfig {
   if (existsSync(path)) {
     try {
       const raw = JSON.parse(readFileSync(path, "utf8")) as Partial<LemaConfig>;
+      // Merge the nested context block field-by-field so a partial override
+      // (e.g. just maskWindow) keeps the other budget defaults.
+      const context = { ...cfg.context, ...raw.context };
       Object.assign(cfg, raw);
+      cfg.context = context;
     } catch (err) {
       throw new Error(`Failed to parse lema.config.json: ${(err as Error).message}`);
     }
