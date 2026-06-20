@@ -45,6 +45,7 @@ export interface RunOptions {
   tools?: Tool[];
   skills?: SkillStore;
   onEvent?: (e: AgentEvent) => void;
+  signal?: AbortSignal;
 }
 
 /** Run the agent loop on a single task until it stops calling tools or hits maxSteps. */
@@ -93,9 +94,10 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
   };
 
   while (steps < maxSteps) {
+    if (opts.signal?.aborted) break;
     steps++;
     emit({ type: "thinking" });
-    const { message: reply, usage } = await provider.chat(messages, { model, tools: schemas });
+    const { message: reply, usage } = await provider.chat(messages, { model, tools: schemas, signal: opts.signal });
     emit({ type: "thinking-stop" });
     if (usage) {
       promptTok += usage.prompt_tokens ?? 0;

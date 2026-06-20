@@ -160,13 +160,14 @@ async function dispatch(session: Session, raw: string): Promise<boolean> {
   return (await cmd.run(session, rest.join(" "))) === true;
 }
 
-async function runTask(session: Session, task: string): Promise<void> {
+async function runTask(session: Session, task: string, signal?: AbortSignal): Promise<void> {
   const render = session.render ?? consoleRenderer;
   await runAgent(task, {
     maxSteps: session.maxSteps,
     provider: session.provider,
     cwd: process.cwd(),
     skills: session.skills,
+    signal,
     onEvent: (e) => {
       render(e);
       if (e.type === "done" && e.stats) session.onStats?.(e.stats);
@@ -176,14 +177,15 @@ async function runTask(session: Session, task: string): Promise<void> {
 }
 
 /** Process one input line. Returns true when the session should end. */
-async function handle(session: Session, raw: string): Promise<boolean> {
+async function handle(session: Session, raw: string, signal?: AbortSignal): Promise<boolean> {
   const input = raw.trim();
   if (!input) return false;
   try {
     if (input === "/") printMenu();
     else if (input.startsWith("/")) return await dispatch(session, input.slice(1));
-    else await runTask(session, input);
+    else await runTask(session, input, signal);
   } catch (e) {
+    if ((e as Error).name === "AbortError") return false;
     ui.err((e as Error).message);
   }
   return false;
@@ -232,7 +234,7 @@ export async function startRepl(cfg: LemaConfig, provider: ModelProvider): Promi
     commands: tuiCommands,
     footerRight: () => footerRight,
     placeholder: 'Try "add a /health route and a test"  ·  / for commands',
-    onSubmit: (line) => handle(session, line),
+    onSubmit: (line, signal) => handle(session, line, signal),
   });
 
   // Capture all transcript output into the TUI, and route agent events to it.

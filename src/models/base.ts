@@ -13,11 +13,12 @@ export class BaseProvider implements ModelProvider {
     },
   ) {}
 
-  private async post(path: string, body: unknown): Promise<any> {
+  private async post(path: string, body: unknown, signal?: AbortSignal): Promise<any> {
     const res = await fetch(`${this.cfg.baseUrl}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -53,7 +54,7 @@ export class BaseProvider implements ModelProvider {
       body.tools = opts.tools;
       body.tool_choice = "auto";
     }
-    const json = await this.post("/chat/completions", body);
+    const json = await this.post("/chat/completions", body, opts.signal);
     return { message: json.choices[0].message as ChatMessage, usage: json.usage as Usage | undefined };
   }
 

@@ -15,7 +15,7 @@ export interface TuiOptions {
   commands: TuiCommand[];
   footerRight: () => string;
   placeholder: string;
-  onSubmit: (line: string) => Promise<boolean>;
+  onSubmit: (line: string, signal: AbortSignal) => Promise<boolean>;
 }
 
 export class Tui {
@@ -36,6 +36,7 @@ export class Tui {
   /** Row of the hardware cursor within the rendered input box (0 = top line of box). */
   private lastCursorRowInBox = 0;
   private _hasBox = false;
+  private abortController: AbortController | null = null;
 
   constructor(private opts: TuiOptions) {}
 
@@ -188,7 +189,12 @@ export class Tui {
       return this.render();
     }
 
-    if (this.busy) return;
+    if (this.busy) {
+      if (key.name === "escape" || (key.ctrl && key.name === "z")) {
+        this.abortController?.abort();
+      }
+      return;
+    }
     const ms = matchCommands(this.opts.commands, st.buf);
 
     if (key.name === "return") {
@@ -232,9 +238,17 @@ export class Tui {
     }
     this.busy = true;
     this.render();
+    const ac = new AbortController();
+    this.abortController = ac;
     let quit = false;
-    try { quit = await this.opts.onSubmit(line); }
-    catch (e) { this.print(ui.red("✗ ") + (e as Error).message); }
+    try {
+      quit = await this.opts.onSubmit(line, ac.signal);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") this.print(ui.red("✗ ") + (e as Error).message);
+    } finally {
+      this.abortController = null;
+    }
+    if (ac.signal.aborted) this.print(ui.dim("↩ cancelled"));
     this.setStatus(null);
     this.busy = false;
     if (quit) return this.teardown();

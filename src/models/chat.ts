@@ -5,6 +5,7 @@ export interface ChatOptions {
   tools?: ToolSchema[];
   temperature?: number;
   maxTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface ChatResult {
