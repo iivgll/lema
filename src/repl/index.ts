@@ -285,6 +285,8 @@ export function consoleRenderer(e: AgentEvent): void {
     ui.step(e.label ?? "step", e.text ?? "");
   } else if (e.type === "tool") {
     ui.tool(e.tool ?? "?", e.detail ?? "");
+  } else if (e.type === "tool-result") {
+    ui.toolResult(e.text ?? "");
   } else if (e.type === "assistant" && e.text) {
     ui.log(renderMarkdown(e.text));
   } else if (e.type === "done") {
@@ -301,6 +303,7 @@ function tuiRenderer(tui: Tui): (e: AgentEvent) => void {
     else if (e.type === "thinking-stop") tui.setStatus(null);
     else if (e.type === "step") ui.step(e.label ?? "step", e.text ?? "");
     else if (e.type === "tool") ui.tool(e.tool ?? "?", e.detail ?? "");
+    else if (e.type === "tool-result") ui.toolResult(e.text ?? "");
     else if (e.type === "assistant" && e.text) {
       assistantBuffer.push(formatResponse(e.text));
     }

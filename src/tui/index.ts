@@ -232,7 +232,11 @@ export class Tui {
     this.paste.clear();
     if (shown) {
       this.history.push(shown);
-      this.print(ui.magenta("› ") + (shown.startsWith("/") ? ui.cyan(shown) : shown));
+      // A blank line above + a bold prompt so the user's message stands out as a
+      // turn boundary instead of blending into the transcript.
+      this.print("");
+      this.print(ui.bold(ui.magenta("› ")) + (shown.startsWith("/") ? ui.cyan(shown) : ui.bold(shown)));
+      this.print("");
     }
     this.busy = true;
     this.render();

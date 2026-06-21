@@ -29,7 +29,7 @@ export interface AgentStats {
 }
 
 export interface AgentEvent {
-  type: "step" | "tool" | "assistant" | "thinking" | "thinking-stop" | "done";
+  type: "step" | "tool" | "tool-result" | "assistant" | "thinking" | "thinking-stop" | "done";
   text?: string;
   tool?: string;
   detail?: string;
@@ -311,6 +311,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
           result = `ERROR: ${(e as Error).message}`;
         }
       }
+      emit({ type: "tool-result", tool: call.function.name, text: summarizeResult(call.function.name, result) });
       if (READ_ONLY.has(call.function.name)) seen.set(sig, result);
       // A successful file change means there's something to verify later.
       if (WRITE_TOOLS.has(call.function.name) && !result.startsWith("ERROR")) dirty = true;
@@ -342,7 +343,40 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 function summarizeArgs(args: Record<string, any>): string {
   if (args.command) return String(args.command).slice(0, 80);
   if (args.path) return String(args.path);
+  if (args.pattern) return String(args.pattern);
+  if (args.query) return String(args.query);
+  if (args.url) return String(args.url);
   return Object.keys(args).join(", ");
+}
+
+/** A short, human-readable one-liner describing what a tool returned. */
+function summarizeResult(name: string, result: string): string {
+  if (result.startsWith("ERROR") || result.startsWith("EXIT")) {
+    return result.split("\n")[0].slice(0, 100);
+  }
+  const lines = result.split("\n");
+  const nonEmpty = lines.filter((l) => l.trim()).length;
+  switch (name) {
+    case "read_file":
+      return `${lines.length} line${lines.length === 1 ? "" : "s"}`;
+    case "grep":
+      return result.startsWith("no ") ? "no matches" : `${nonEmpty} match${nonEmpty === 1 ? "" : "es"}`;
+    case "glob":
+      return result.startsWith("no ") ? "no files" : `${nonEmpty} file${nonEmpty === 1 ? "" : "s"}`;
+    case "list_dir":
+      return `${nonEmpty} entr${nonEmpty === 1 ? "y" : "ies"}`;
+    case "write_file":
+    case "edit_file":
+      return lines[0].slice(0, 80);
+    case "web_search":
+      return `${result.split(/\n\n+/).filter((b) => b.trim()).length} result(s)`;
+    case "web_fetch":
+      return `${result.length} chars`;
+    case "bash":
+      return result === "(no output)" ? "(no output)" : `${lines.length} line${lines.length === 1 ? "" : "s"}`;
+    default:
+      return `${result.length} chars`;
+  }
 }
 
 /** Compact one-line stats for the pinned footer. Plain text; the caller styles it. */
