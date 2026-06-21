@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { formatStats, runAgent, type AgentEvent } from "../src/agent/index.js";
-import type { ModelProvider, ChatResult } from "../src/provider.js";
+import type { ModelProvider, ChatResult, ChatOptions } from "../src/provider.js";
 
 describe("formatStats", () => {
   test("formats all fields", () => {
@@ -130,6 +130,19 @@ describe("runAgent", () => {
     const result = await runAgent("do it", { maxSteps: 5, provider, cwd: "/tmp", tools: [], effort: "ultra" });
     assert.equal(calls, 2); // first finish was gated, model asked to verify, then accepted
     assert.equal(result.answer, "answer 2");
+  });
+
+  test("auto effort resolves per task and high passes reasoning_effort", async () => {
+    // A heavy task should resolve to high under auto, which sets reasoning_effort.
+    let captured: ChatOptions | undefined;
+    const provider: ModelProvider = {
+      listModels: async () => ["m"],
+      resolveModel: async () => "m",
+      embed: async (t) => t.map(() => []),
+      chat: async (_msgs, opts) => { captured = opts; return { message: { role: "assistant", content: "ok" }, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } }; },
+    };
+    await runAgent("implement a /health route and a test", { maxSteps: 5, provider, cwd: "/tmp", tools: [], effort: "auto" });
+    assert.equal(captured?.reasoningEffort, "high");
   });
 
   test("medium accepts the first finish (no verify gate)", async () => {

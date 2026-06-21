@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { effortProfile, EFFORTS } from "../src/effort.js";
+import { effortProfile, estimateEffort, EFFORTS } from "../src/effort.js";
 
 const base = { maxSteps: 12, maxTokens: 2048 };
 
@@ -54,7 +54,40 @@ describe("effortProfile", () => {
     assert.equal(p.verify, false);
   });
 
+  test("high and ultra carry a native reasoning hint; low/medium do not", () => {
+    assert.equal(effortProfile("high", base).reasoning, "high");
+    assert.equal(effortProfile("ultra", base).reasoning, "high");
+    assert.equal(effortProfile("low", base).reasoning, undefined);
+    assert.equal(effortProfile("medium", base).reasoning, undefined);
+  });
+
   test("EFFORTS lists the four levels", () => {
     assert.deepEqual([...EFFORTS], ["low", "medium", "high", "ultra"]);
+  });
+});
+
+describe("estimateEffort", () => {
+  test("heavy build/fix tasks → high", () => {
+    assert.equal(estimateEffort("implement a /health route and a test"), "high");
+    assert.equal(estimateEffort("fix the failing build"), "high");
+    assert.equal(estimateEffort("refactor the provider module"), "high");
+  });
+
+  test("short factual questions → low", () => {
+    assert.equal(estimateEffort("what is this project?"), "low");
+    assert.equal(estimateEffort("list the tools"), "low");
+  });
+
+  test("everything else → medium", () => {
+    assert.equal(estimateEffort("summarize the readme in two sentences"), "medium");
+  });
+
+  test("very long asks → high", () => {
+    assert.equal(estimateEffort("please " + "word ".repeat(50)), "high");
+  });
+
+  test("never auto-selects ultra", () => {
+    const samples = ["implement everything", "what is x", "do the thing", "fix all bugs and rewrite"];
+    for (const s of samples) assert.notEqual(estimateEffort(s), "ultra");
   });
 });

@@ -57,6 +57,8 @@ export class BaseProvider implements ModelProvider {
       temperature: opts.temperature ?? this.cfg.temperature,
       max_tokens: opts.maxTokens ?? this.cfg.maxTokens,
     };
+    // Native reasoning hint (E1). Servers that don't support it ignore the field.
+    if (opts.reasoningEffort) base.reasoning_effort = opts.reasoningEffort;
 
     if (!opts.tools?.length) {
       const json = await this.post("/chat/completions", base, opts.signal);

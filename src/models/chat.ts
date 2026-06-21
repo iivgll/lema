@@ -5,6 +5,8 @@ export interface ChatOptions {
   tools?: ToolSchema[];
   temperature?: number;
   maxTokens?: number;
+  /** Native reasoning hint (OpenAI `reasoning_effort`). Ignored by servers that don't support it. */
+  reasoningEffort?: "low" | "medium" | "high";
   signal?: AbortSignal;
 }
 

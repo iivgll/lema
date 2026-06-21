@@ -8,7 +8,7 @@ import { SkillStore } from "../skills/index.js";
 import { runAgent, formatStats, type AgentStats, type AgentEvent } from "../agent/index.js";
 import { ContextManager } from "../context/index.js";
 import { getTools, type Tool } from "../tools/index.js";
-import { EFFORTS, type Effort } from "../effort.js";
+import { EFFORT_SETTINGS, type EffortSetting } from "../effort.js";
 import { Tui, type TuiCommand } from "../tui/index.js";
 import { renderMarkdown } from "../tui/markdown.js";
 
@@ -31,7 +31,7 @@ interface Session {
   baseUrl: string;
   maxSteps: number;
   maxTokens: number;
-  effort: Effort;
+  effort: EffortSetting;
   provider: ModelProvider;
   skills: SkillStore;
   context: ContextManager;
@@ -47,7 +47,7 @@ interface Session {
   /** Enable/disable the built-in web tools for this session. */
   setWeb?: (on: boolean) => void;
   /** Change the reasoning effort for this session. */
-  setEffort?: (e: Effort) => void;
+  setEffort?: (e: EffortSetting) => void;
 }
 
 /** A slash command. Adding one must not require touching the REPL loop (open/closed). */
@@ -148,19 +148,19 @@ const webOn = (s: Session) => s.tools.some((t) => t.schema.function.name === "we
 
 /** Set reasoning effort directly (`/effort high`) or via an interactive picker. */
 async function runEffort(s: Session, arg: string): Promise<void> {
-  const apply = (e: Effort) => { s.setEffort?.(e); ui.ok(`effort → ${e}`); };
+  const apply = (e: EffortSetting) => { s.setEffort?.(e); ui.ok(`effort → ${e}`); };
   const want = arg.trim().toLowerCase();
   if (want) {
-    if (!EFFORTS.includes(want as Effort)) return ui.warn(`unknown effort: ${want} — use low, medium or high`);
-    return apply(want as Effort);
+    if (!EFFORT_SETTINGS.includes(want as EffortSetting)) return ui.warn(`unknown effort: ${want} — use auto, low, medium, high or ultra`);
+    return apply(want as EffortSetting);
   }
   if (s.select) {
-    const items = EFFORTS.map((e) => (e === s.effort ? `${e}  ●` : `${e}`));
+    const items = EFFORT_SETTINGS.map((e) => (e === s.effort ? `${e}  ●` : `${e}`));
     const pick = await s.select("Effort  (↑/↓ · Enter · Esc)", items);
-    if (pick) apply(EFFORTS[items.indexOf(pick)]);
+    if (pick) apply(EFFORT_SETTINGS[items.indexOf(pick)]);
     return;
   }
-  ui.log(`  effort: ${s.effort}  ${ui.dim("(low · medium · high)")}`);
+  ui.log(`  effort: ${s.effort}  ${ui.dim("(auto · low · medium · high · ultra)")}`);
 }
 
 /** Show the settings panel, or run a settings sub-command like `web on`. */

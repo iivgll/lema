@@ -3,7 +3,7 @@ import { ALL_TOOLS, toolMap, type Tool } from "../tools/index.js";
 import { SkillStore } from "../skills/index.js";
 import { ContextManager } from "../context/index.js";
 import { parseTextToolCalls } from "./toolparse.js";
-import { effortProfile, type Effort } from "../effort.js";
+import { effortProfile, estimateEffort, type EffortSetting } from "../effort.js";
 const SYSTEM = `You are lema, a focused local coding agent running on a small local model.
 You operate inside the user's working directory through tools.
 
@@ -53,8 +53,8 @@ export interface RunOptions {
   context?: ContextManager;
   /** Base completion-token budget (medium effort). Scaled by effort. */
   maxTokens?: number;
-  /** Reasoning dial; scales maxSteps/maxTokens and adds a prompt hint. Default medium. */
-  effort?: Effort;
+  /** Reasoning dial; scales maxSteps/maxTokens and adds a prompt hint. "auto" picks per task. Default medium. */
+  effort?: EffortSetting;
 }
 
 /** Tools with no side effects — repeating one with identical args is wasted work. */
@@ -78,6 +78,7 @@ async function forceFinish(
   model: string,
   note: string,
   maxTokens: number,
+  reasoning: "low" | "medium" | "high" | undefined,
   signal?: AbortSignal,
 ): Promise<string> {
   ctx.push({
@@ -85,7 +86,7 @@ async function forceFinish(
     content: `${note} Give your best final answer now using what you've already gathered. Do not call any tools.`,
   });
   try {
-    const { message } = await provider.chat(ctx.render(), { model, maxTokens, signal });
+    const { message } = await provider.chat(ctx.render(), { model, maxTokens, reasoningEffort: reasoning, signal });
     ctx.push(message);
     return message.content ?? "";
   } catch {
@@ -101,8 +102,12 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
   const emit = opts.onEvent ?? (() => {});
   const ctx = opts.context ?? new ContextManager();
 
-  // Resolve the effort dial into concrete budgets + a behavioural hint.
-  const profile = effortProfile(opts.effort ?? "medium", {
+  // Resolve the effort dial. "auto" picks a level from the task (E2); a concrete
+  // setting is used as-is. Then map to budgets + behavioural hint.
+  const setting = opts.effort ?? "medium";
+  const effort = setting === "auto" ? estimateEffort(task) : setting;
+  if (setting === "auto") emit({ type: "step", text: `effort: ${effort} (auto)` });
+  const profile = effortProfile(effort, {
     maxSteps: opts.maxSteps,
     maxTokens: opts.maxTokens ?? 2048,
   });
@@ -160,7 +165,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
     if (opts.signal?.aborted) break;
     steps++;
     emit({ type: "thinking" });
-    const { message: reply, usage } = await provider.chat(ctx.render(), { model, tools: schemas, maxTokens, signal: opts.signal });
+    const { message: reply, usage } = await provider.chat(ctx.render(), { model, tools: schemas, maxTokens, reasoningEffort: profile.reasoning, signal: opts.signal });
     emit({ type: "thinking-stop" });
     if (usage) {
       promptTok += usage.prompt_tokens ?? 0;
@@ -243,7 +248,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
     // Too many repeated calls means the model is stuck — finish gracefully.
     if (repeats >= REPEAT_BUDGET) {
-      const answer = await forceFinish(provider, ctx, model, "You are repeating tool calls.", maxTokens, opts.signal);
+      const answer = await forceFinish(provider, ctx, model, "You are repeating tool calls.", maxTokens, profile.reasoning, opts.signal);
       emit({ type: "done", text: answer, stats: stats() });
       return { answer, steps, transcript: ctx.render() };
     }
@@ -251,7 +256,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
   // Hit the step budget: don't throw the work away — force a final answer with
   // no tools so the model concludes from everything it has gathered.
-  const answer = await forceFinish(provider, ctx, model, "You have reached the step limit.", maxTokens, opts.signal);
+  const answer = await forceFinish(provider, ctx, model, "You have reached the step limit.", maxTokens, profile.reasoning, opts.signal);
   emit({ type: "done", text: answer, stats: stats() });
   return { answer, steps, transcript: ctx.render() };
 }

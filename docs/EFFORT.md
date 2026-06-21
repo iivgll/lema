@@ -93,13 +93,13 @@ src/effort.ts
 
 A first-class command (not tucked under `/settings`):
 
-- `/effort` — interactive radio picker (low / medium / high), current marked.
-- `/effort low|medium|high` — set directly.
+- `/effort` — interactive radio picker (auto / low / medium / high / ultra), current marked.
+- `/effort auto|low|medium|high|ultra` — set directly.
 - Persist in config:
 
 ```jsonc
 // lema.config.json
-{ "effort": "medium" }   // default
+{ "effort": "medium" }   // default; "auto" picks a level per task
 ```
 
 ## Implementation phases
@@ -114,13 +114,15 @@ A first-class command (not tucked under `/settings`):
 - Tests: low halves and floors budgets (with minimums); high doubles; medium == base;
   unknown value falls back to medium; profile is pure.
 
-### E1 — native thinking passthrough (A)
-- On `high`, send the server's reasoning hint (e.g. `reasoning_effort`/thinking enable)
-  when supported; degrade silently to B+C when not (same probe/fallback pattern as the
-  strict-tools work in [grammar.ts](../src/models/grammar.js)).
+### E1 — native thinking passthrough (A)  ✅
+- `high`/`ultra` carry `reasoning: "high"`, sent as `reasoning_effort` in the request body
+  ([chat.ts](../src/models/chat.js), [base.ts](../src/models/base.js)). Servers that don't
+  support it ignore the field, so it degrades silently to B+C — no probe needed.
 
-### (later) E2 — adaptive effort (D)
-- Auto-pick a profile from a cheap task-difficulty heuristic; manual `/effort` overrides.
+### E2 — adaptive effort (D)  ✅
+- `effort: "auto"` resolves per task via `estimateEffort(task)` (cheap, no model call):
+  heavy build/fix or long asks → `high`, short factual questions → `low`, else `medium`.
+  Never auto-selects `ultra` (opt-in). A manual `/effort` setting overrides auto.
 
 ## Invariants (must hold; cover with tests)
 
