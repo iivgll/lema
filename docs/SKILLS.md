@@ -137,17 +137,20 @@ src/memory/            (renamed from today's skills/)
 
 ## Implementation phases
 
-### S1 — authored skills, read path (the 80/20)
+### S1 — authored skills, read path (the 80/20) ✅
 - `skill.ts` + `store.ts`: discover `.lema/skills/` and `~/.lema/skills/`, parse `SKILL.md`,
   project-wins precedence.
-- L1 metadata injected into the preamble; `/skills` lists them.
-- `/<name>` (and `/skill <name>`) loads the body and runs the task with it.
-- Tests: discovery + precedence; frontmatter parse; body loads only on invoke.
+- L1 metadata injected into the system preamble; `/skills` lists them.
+- `/<name> [task]` loads the body and runs the task with it.
+- Tests: discovery + precedence; frontmatter parse; body loads only on invoke. Validated
+  live (discovery via `lema skills`).
 
-### S2 — AI skill-creator
-- `creator.ts`: skill-creator instruction; `skill new "<prompt>" [--global]` writes a
-  validated `SKILL.md` after confirmation.
-- Tests: generated file has valid frontmatter; lands in the chosen scope.
+### S2 — AI skill-creator ✅
+- `creator.ts`: short skill-creator instruction (kept brief so reasoning models don't
+  overthink and starve the output); `/skill new "<prompt>" [--global]` authors and writes a
+  validated `SKILL.md`, with a minimal fallback if parsing fails.
+- Tests: well-formed response parses; unusable output falls back. Validated live on
+  qwen3.5-9b (consistent, real skills).
 
 ### S3 — auto-invocation
 - Embed task vs skill descriptions; load top body on a strong match, behind a config flag.
