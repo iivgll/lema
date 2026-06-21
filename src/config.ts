@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { type ContextBudget, BUDGET_DEFAULTS } from "./context/index.js";
+import type { Effort } from "./effort.js";
 
 export interface LemaConfig {
   /** OpenAI-compatible base URL (LM Studio, Ollama, llama.cpp, ...). */
@@ -21,6 +22,8 @@ export interface LemaConfig {
   context: ContextBudget;
   /** Toolset flags. Web search is on by default; toggle at runtime with /settings web. */
   tools?: { web?: boolean };
+  /** Reasoning dial: low/medium/high. Scales step + token budgets. Default medium. */
+  effort: Effort;
 }
 
 export const DEFAULTS: LemaConfig = {
@@ -31,6 +34,7 @@ export const DEFAULTS: LemaConfig = {
   maxSteps: 12,
   stateDir: ".lema",
   tools: { web: true },
+  effort: "medium",
   context: BUDGET_DEFAULTS,
 };
 

@@ -8,6 +8,7 @@ import { SkillStore } from "../skills/index.js";
 import { runAgent, formatStats, type AgentStats, type AgentEvent } from "../agent/index.js";
 import { ContextManager } from "../context/index.js";
 import { getTools, type Tool } from "../tools/index.js";
+import { EFFORTS, type Effort } from "../effort.js";
 import { Tui, type TuiCommand } from "../tui/index.js";
 import { renderMarkdown } from "../tui/markdown.js";
 
@@ -29,6 +30,8 @@ import * as ui from "../ui.js";
 interface Session {
   baseUrl: string;
   maxSteps: number;
+  maxTokens: number;
+  effort: Effort;
   provider: ModelProvider;
   skills: SkillStore;
   context: ContextManager;
@@ -43,6 +46,8 @@ interface Session {
   setModel?: (id: string) => void;
   /** Enable/disable the built-in web tools for this session. */
   setWeb?: (on: boolean) => void;
+  /** Change the reasoning effort for this session. */
+  setEffort?: (e: Effort) => void;
 }
 
 /** A slash command. Adding one must not require touching the REPL loop (open/closed). */
@@ -91,6 +96,11 @@ const COMMANDS: SlashCommand[] = [
     },
   },
   {
+    name: "effort",
+    desc: "set reasoning effort: low, medium, high",
+    run: (s, arg) => runEffort(s, arg),
+  },
+  {
     name: "settings",
     aliases: ["set"],
     desc: "view settings or change one: web, cwd, ping",
@@ -135,6 +145,23 @@ const SETTINGS_INDEX = new Map<string, SlashCommand>(
 );
 
 const webOn = (s: Session) => s.tools.some((t) => t.schema.function.name === "web_search");
+
+/** Set reasoning effort directly (`/effort high`) or via an interactive picker. */
+async function runEffort(s: Session, arg: string): Promise<void> {
+  const apply = (e: Effort) => { s.setEffort?.(e); ui.ok(`effort → ${e}`); };
+  const want = arg.trim().toLowerCase();
+  if (want) {
+    if (!EFFORTS.includes(want as Effort)) return ui.warn(`unknown effort: ${want} — use low, medium or high`);
+    return apply(want as Effort);
+  }
+  if (s.select) {
+    const items = EFFORTS.map((e) => (e === s.effort ? `${e}  ●` : `${e}`));
+    const pick = await s.select("Effort  (↑/↓ · Enter · Esc)", items);
+    if (pick) apply(EFFORTS[items.indexOf(pick)]);
+    return;
+  }
+  ui.log(`  effort: ${s.effort}  ${ui.dim("(low · medium · high)")}`);
+}
 
 /** Show the settings panel, or run a settings sub-command like `web on`. */
 async function runSettings(s: Session, arg: string): Promise<void> {
@@ -222,21 +249,28 @@ export function consoleRenderer(e: AgentEvent): void {
   } else if (e.type === "assistant" && e.text) {
     ui.log(renderMarkdown(e.text));
   } else if (e.type === "done") {
-    ui.log();
+    ui.log("\n\n\n");
     ui.log(renderMarkdown(e.text ?? ""));
   }
 }
 
 /** Renders agent events into the TUI: status spinner + transcript output. */
 function tuiRenderer(tui: Tui): (e: AgentEvent) => void {
+  const assistantBuffer: string[] = [];
   return (e) => {
     if (e.type === "thinking") tui.setStatus("thinking…");
     else if (e.type === "thinking-stop") tui.setStatus(null);
     else if (e.type === "step") ui.step("skills", e.text ?? "");
     else if (e.type === "tool") ui.tool(e.tool ?? "?", e.detail ?? "");
-    else if (e.type === "assistant" && e.text) ui.log(formatResponse(e.text));
+    else if (e.type === "assistant" && e.text) {
+      assistantBuffer.push(formatResponse(e.text));
+    }
     else if (e.type === "done" && e.text?.trim()) {
       ui.log(formatResponse(e.text));
+    }
+    else if (e.type === "done" && assistantBuffer.length > 0) {
+      ui.log(assistantBuffer.join("\n"));
+      assistantBuffer.length = 0;
     }
   };
 }
@@ -255,6 +289,8 @@ async function runTask(session: Session, task: string, signal?: AbortSignal): Pr
   const render = session.render ?? consoleRenderer;
   await runAgent(task, {
     maxSteps: session.maxSteps,
+    maxTokens: session.maxTokens,
+    effort: session.effort,
     provider: session.provider,
     cwd: process.cwd(),
     skills: session.skills,
@@ -303,6 +339,8 @@ export async function startRepl(cfg: LemaConfig, provider: ModelProvider): Promi
   const session: Session = {
     baseUrl: cfg.baseUrl,
     maxSteps: cfg.maxSteps,
+    maxTokens: cfg.maxTokens,
+    effort: cfg.effort,
     provider,
     skills: new SkillStore(cfg, provider),
     context: new ContextManager({ budget: cfg.context }),
@@ -342,6 +380,10 @@ export async function startRepl(cfg: LemaConfig, provider: ModelProvider): Promi
   session.setWeb = (on) => {
     cfg.tools = { ...cfg.tools, web: on };
     session.tools = getTools(cfg);
+  };
+  session.setEffort = (e) => {
+    cfg.effort = e;
+    session.effort = e;
   };
   ui.setSink((s) => tui.print(s));
   try {

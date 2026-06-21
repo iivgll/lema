@@ -5,6 +5,7 @@
   "maxTokens": 2048,
   "maxSteps": 12,
   "stateDir": ".lema",
+  "effort": "medium",
   "tools": { "web": true },
   "context": {
     "contextWindow": 8192,

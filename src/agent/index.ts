@@ -3,6 +3,7 @@ import { ALL_TOOLS, toolMap, type Tool } from "../tools/index.js";
 import { SkillStore } from "../skills/index.js";
 import { ContextManager } from "../context/index.js";
 import { parseTextToolCalls } from "./toolparse.js";
+import { effortProfile, type Effort } from "../effort.js";
 const SYSTEM = `You are lema, a focused local coding agent running on a small local model.
 You operate inside the user's working directory through tools.
 
@@ -50,6 +51,10 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Persistent context for cross-turn memory. Created once per session in repl. */
   context?: ContextManager;
+  /** Base completion-token budget (medium effort). Scaled by effort. */
+  maxTokens?: number;
+  /** Reasoning dial; scales maxSteps/maxTokens and adds a prompt hint. Default medium. */
+  effort?: Effort;
 }
 
 /** Tools with no side effects — repeating one with identical args is wasted work. */
@@ -72,6 +77,7 @@ async function forceFinish(
   ctx: ContextManager,
   model: string,
   note: string,
+  maxTokens: number,
   signal?: AbortSignal,
 ): Promise<string> {
   ctx.push({
@@ -79,7 +85,7 @@ async function forceFinish(
     content: `${note} Give your best final answer now using what you've already gathered. Do not call any tools.`,
   });
   try {
-    const { message } = await provider.chat(ctx.render(), { model, signal });
+    const { message } = await provider.chat(ctx.render(), { model, maxTokens, signal });
     ctx.push(message);
     return message.content ?? "";
   } catch {
@@ -89,18 +95,27 @@ async function forceFinish(
 
 /** Run the agent loop on a single task until it stops calling tools or hits maxSteps. */
 export async function runAgent(task: string, opts: RunOptions): Promise<AgentResult> {
-  const { maxSteps, provider, cwd } = opts;
+  const { provider, cwd } = opts;
   const tools = opts.tools ?? ALL_TOOLS;
   const tmap = toolMap(tools);
   const emit = opts.onEvent ?? (() => {});
   const ctx = opts.context ?? new ContextManager();
+
+  // Resolve the effort dial into concrete budgets + a behavioural hint.
+  const profile = effortProfile(opts.effort ?? "medium", {
+    maxSteps: opts.maxSteps,
+    maxTokens: opts.maxTokens ?? 2048,
+  });
+  const maxSteps = profile.maxSteps;
+  const maxTokens = profile.maxTokens;
 
   const model = await provider.resolveModel();
 
   // The system prompt is pushed once per session; subsequent tasks reuse the
   // existing conversation so it persists across turns (cross-turn memory).
   if (!ctx.isInitialized()) {
-    ctx.push({ role: "system", content: SYSTEM });
+    const system = profile.hint ? `${SYSTEM}\n\n${profile.hint}` : SYSTEM;
+    ctx.push({ role: "system", content: system });
   }
 
   // Skill recall depends on the current task, so it runs on every turn.
@@ -144,7 +159,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
     if (opts.signal?.aborted) break;
     steps++;
     emit({ type: "thinking" });
-    const { message: reply, usage } = await provider.chat(ctx.render(), { model, tools: schemas, signal: opts.signal });
+    const { message: reply, usage } = await provider.chat(ctx.render(), { model, tools: schemas, maxTokens, signal: opts.signal });
     emit({ type: "thinking-stop" });
     if (usage) {
       promptTok += usage.prompt_tokens ?? 0;
@@ -212,7 +227,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
     // Too many repeated calls means the model is stuck — finish gracefully.
     if (repeats >= REPEAT_BUDGET) {
-      const answer = await forceFinish(provider, ctx, model, "You are repeating tool calls.", opts.signal);
+      const answer = await forceFinish(provider, ctx, model, "You are repeating tool calls.", maxTokens, opts.signal);
       emit({ type: "done", text: answer, stats: stats() });
       return { answer, steps, transcript: ctx.render() };
     }
@@ -220,7 +235,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
   // Hit the step budget: don't throw the work away — force a final answer with
   // no tools so the model concludes from everything it has gathered.
-  const answer = await forceFinish(provider, ctx, model, "You have reached the step limit.", opts.signal);
+  const answer = await forceFinish(provider, ctx, model, "You have reached the step limit.", maxTokens, opts.signal);
   emit({ type: "done", text: answer, stats: stats() });
   return { answer, steps, transcript: ctx.render() };
 }
