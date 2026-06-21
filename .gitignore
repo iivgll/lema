@@ -7,3 +7,6 @@ dist/
 
 # Personal config — copy lema.config.example.json to lema.config.json and edit.
 lema.config.json
+
+# Local sandbox project for manually testing lema in different modes.
+sandbox/
