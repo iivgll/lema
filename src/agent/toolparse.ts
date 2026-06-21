@@ -12,6 +12,19 @@ import type { ToolCall } from "../provider.js";
  * Returns [] when nothing parseable is found, so callers can treat the content
  * as a normal final answer.
  */
+/**
+ * Remove tool-call markup from a final answer. When the model "calls a tool" in
+ * its tool-less finishing turn, the raw <tool_call>/<function=…> text would
+ * otherwise leak into the answer shown to the user.
+ */
+export function stripToolMarkup(content: string): string {
+  return content
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "")
+    .replace(/<function=[\s\S]*?<\/function>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function parseTextToolCalls(content: string): ToolCall[] {
   const calls: ToolCall[] = [];
 

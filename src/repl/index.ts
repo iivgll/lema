@@ -255,13 +255,13 @@ export function consoleRenderer(e: AgentEvent): void {
   if (e.type === "thinking") {
     activeSpinner = ui.spinner("thinking…");
   } else if (e.type === "step") {
-    ui.step("skills", e.text ?? "");
+    ui.step(e.label ?? "step", e.text ?? "");
   } else if (e.type === "tool") {
     ui.tool(e.tool ?? "?", e.detail ?? "");
   } else if (e.type === "assistant" && e.text) {
     ui.log(renderMarkdown(e.text));
   } else if (e.type === "done") {
-    ui.log("\n\n\n");
+    ui.log();
     ui.log(renderMarkdown(e.text ?? ""));
   }
 }
@@ -272,7 +272,7 @@ function tuiRenderer(tui: Tui): (e: AgentEvent) => void {
   return (e) => {
     if (e.type === "thinking") tui.setStatus("thinking…");
     else if (e.type === "thinking-stop") tui.setStatus(null);
-    else if (e.type === "step") ui.step("skills", e.text ?? "");
+    else if (e.type === "step") ui.step(e.label ?? "step", e.text ?? "");
     else if (e.type === "tool") ui.tool(e.tool ?? "?", e.detail ?? "");
     else if (e.type === "assistant" && e.text) {
       assistantBuffer.push(formatResponse(e.text));

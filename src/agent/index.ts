@@ -2,7 +2,7 @@ import type { ModelProvider, ChatMessage } from "../provider.js";
 import { ALL_TOOLS, toolMap, type Tool } from "../tools/index.js";
 import { SkillStore } from "../skills/index.js";
 import { ContextManager } from "../context/index.js";
-import { parseTextToolCalls } from "./toolparse.js";
+import { parseTextToolCalls, stripToolMarkup } from "./toolparse.js";
 import { effortProfile, estimateEffort, type EffortSetting } from "../effort.js";
 import type { Verifier, CheckResult } from "../verify/index.js";
 const SYSTEM = `You are lema, a focused local coding agent running on a small local model.
@@ -33,6 +33,8 @@ export interface AgentEvent {
   text?: string;
   tool?: string;
   detail?: string;
+  /** Short label for a `step` event (e.g. "effort", "verify", "skills"). */
+  label?: string;
   stats?: AgentStats;
 }
 
@@ -123,7 +125,7 @@ async function forceFinish(
   try {
     const { message } = await provider.chat(ctx.render(), { model, maxTokens, reasoningEffort: reasoning, signal });
     ctx.push(message);
-    const answer = message.content ?? "";
+    const answer = stripToolMarkup(message.content ?? "") || "Stopped before reaching a clean conclusion.";
     return lastCheck && !lastCheck.ok ? `${answer}\n\n⚠️ Verification still failing.` : answer;
   } catch {
     return "Stopped before reaching a conclusion.";
@@ -142,20 +144,27 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
   // setting is used as-is. Then map to budgets + behavioural hint.
   const setting = opts.effort ?? "medium";
   const effort = setting === "auto" ? estimateEffort(task) : setting;
-  if (setting === "auto") emit({ type: "step", text: `effort: ${effort} (auto)` });
+  if (setting === "auto") emit({ type: "step", label: "effort", text: `${effort} (auto)` });
   const profile = effortProfile(effort, {
     maxSteps: opts.maxSteps,
     maxTokens: opts.maxTokens ?? 2048,
   });
   const maxSteps = profile.maxSteps;
   const maxTokens = profile.maxTokens;
+  // Whether lema runs the project's check itself this run.
+  const doVerify = verifyEnabled(opts.verify, profile.verify) && !!opts.verifier;
 
   const model = await provider.resolveModel();
 
   // The system prompt is pushed once per session; subsequent tasks reuse the
   // existing conversation so it persists across turns (cross-turn memory).
   if (!ctx.isInitialized()) {
-    const system = profile.hint ? `${SYSTEM}\n\n${profile.hint}` : SYSTEM;
+    // When lema verifies, tell the model not to run the tests itself (avoids a
+    // redundant double run and lets lema be the first to see a failure).
+    const verifyNote = doVerify
+      ? `\n\nDo NOT run the tests yourself — lema runs \`${opts.verifier!.command}\` automatically before finishing.`
+      : "";
+    const system = `${SYSTEM}${profile.hint ? `\n\n${profile.hint}` : ""}${verifyNote}`;
     ctx.push({ role: "system", content: system });
   }
 
@@ -171,7 +180,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
         role: "system",
         content: `You have these previously-verified skills. Reuse them when relevant:\n\n${block}`,
       });
-      emit({ type: "step", text: `recalled ${relevant.length} skill(s)` });
+      emit({ type: "step", label: "skills", text: `recalled ${relevant.length} skill(s)` });
     }
   }
 
@@ -179,11 +188,11 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
   const schemas = tools.map((t) => t.schema);
   const seen = new Map<string, string>(); // call signature -> result (dedupe cache)
-  const doVerify = verifyEnabled(opts.verify, profile.verify) && !!opts.verifier;
   let repeats = 0;
   let dirty = false; // have file-changing tools run since the last verification?
   let verifyRounds = 0;
   let sawRedCheck = false; // did a check fail this run (for red→green lessons)?
+  let lastVerifyFailed = false; // is the most recent check still red?
   let lastCheck: CheckResult | null = null;
   let steps = 0;
   let promptTok = 0;
@@ -200,6 +209,20 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
       seconds,
       ctx: ctxTok,
     };
+  };
+
+  // Run the project check if enabled, there are pending changes, and rounds remain.
+  // Returns the result, or null when verification did not run.
+  const runVerification = async (): Promise<CheckResult | null> => {
+    if (!(doVerify && dirty && opts.verifier && verifyRounds < MAX_VERIFY_ROUNDS)) return null;
+    verifyRounds++;
+    emit({ type: "tool", tool: "verify", detail: opts.verifier.command });
+    lastCheck = await opts.verifier.run(cwd);
+    dirty = false; // require a new edit before re-running the check
+    lastVerifyFailed = !lastCheck.ok;
+    if (!lastCheck.ok) sawRedCheck = true;
+    emit({ type: "step", label: "verify", text: lastCheck.ok ? "verified ✓" : "check failed — fixing" });
+    return lastCheck;
   };
 
   while (steps < maxSteps) {
@@ -231,31 +254,22 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
       // the project's check itself (small models verify poorly in-head, well with
       // tools). On failure, feed the output back and let the model fix — one
       // sequential refine round at a time, bounded.
-      if (doVerify && dirty && verifyRounds < MAX_VERIFY_ROUNDS) {
-        verifyRounds++;
-        emit({ type: "tool", tool: "verify", detail: opts.verifier!.command });
-        lastCheck = await opts.verifier!.run(cwd);
-        dirty = false; // require a new edit before re-running the check
-        if (lastCheck.ok) {
-          emit({ type: "step", text: "verified ✓" });
-          if (sawRedCheck && opts.skills) {
-            await recordLesson(opts.skills, task, opts.verifier!.command, lastCheck.output);
-          }
-          const answer = reply.content ?? "";
-          emit({ type: "done", text: answer, stats: stats() });
-          return { answer, steps, transcript: ctx.render() };
+      const checked = await runVerification();
+      if (checked) {
+        if (!checked.ok) {
+          const out = checked.output.slice(0, OUTPUT_CAP);
+          ctx.push({
+            role: "system",
+            content: `The check \`${opts.verifier!.command}\` failed:\n\n${out}\n\nFix the cause, then it will be re-checked.`,
+          });
+          continue;
         }
-        sawRedCheck = true;
-        emit({ type: "step", text: "check failed — fixing" });
-        const out = lastCheck.output.slice(0, OUTPUT_CAP);
-        ctx.push({
-          role: "system",
-          content: `The check \`${opts.verifier!.command}\` failed:\n\n${out}\n\nFix the cause, then it will be re-checked.`,
-        });
-        continue;
+        if (sawRedCheck && opts.skills) {
+          await recordLesson(opts.skills, task, opts.verifier!.command, "(resolved after a failing check)");
+        }
       }
-      let answer = reply.content ?? "";
-      if (lastCheck && !lastCheck.ok) answer += `\n\n⚠️ Verification still failing (\`${opts.verifier!.command}\`).`;
+      let answer = stripToolMarkup(reply.content ?? "");
+      if (lastVerifyFailed) answer += `\n\n⚠️ Verification still failing (\`${opts.verifier!.command}\`).`;
       emit({ type: "done", text: answer, stats: stats() });
       return { answer, steps, transcript: ctx.render() };
     }
@@ -304,14 +318,16 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
 
     // Too many repeated calls means the model is stuck — finish gracefully.
     if (repeats >= REPEAT_BUDGET) {
+      await runVerification(); // honest status even when wrapping up early
       const answer = await forceFinish(provider, ctx, model, "You are repeating tool calls.", maxTokens, profile.reasoning, lastCheck, opts.signal);
       emit({ type: "done", text: answer, stats: stats() });
       return { answer, steps, transcript: ctx.render() };
     }
   }
 
-  // Hit the step budget: don't throw the work away — force a final answer with
-  // no tools so the model concludes from everything it has gathered.
+  // Hit the step budget: don't throw the work away — force a final answer with no
+  // tools. Verify first so we never report success over a red check (F1).
+  await runVerification();
   const answer = await forceFinish(provider, ctx, model, "You have reached the step limit.", maxTokens, profile.reasoning, lastCheck, opts.signal);
   emit({ type: "done", text: answer, stats: stats() });
   return { answer, steps, transcript: ctx.render() };

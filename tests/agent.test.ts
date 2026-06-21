@@ -140,6 +140,16 @@ describe("runAgent", () => {
     assert.equal(saved, 1);          // red→green captured as a lesson
   });
 
+  test("maxSteps path still verifies and reports failure honestly (F1)", async () => {
+    let runs = 0;
+    const verifier = { command: "npm test", run: async () => { runs++; return { ok: false, output: "boom" }; } };
+    // Model never finishes (always asks to write) → hits the step budget.
+    const provider = makeProvider([writeCall]);
+    const result = await runAgent("change it", { maxSteps: 3, provider, cwd: "/tmp", tools: [writeTool], effort: "high", verifier, verify: "auto" });
+    assert.ok(runs >= 1);                       // verification ran on exhaustion, not skipped
+    assert.match(result.answer, /still failing/i); // no false success
+  });
+
   test("no verifier ⇒ accepts the first finish even on high", async () => {
     let runs = 0;
     const provider = makeProvider([writeCall, { content: "done" }]);

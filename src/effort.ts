@@ -57,8 +57,8 @@ const MIN_STEPS = 4;
 const MIN_TOKENS = 512;
 
 const PLAN_HINT =
-  "Start by briefly listing the concrete subgoals, then work through them in order, " +
-  "using tools to check your work as you go.";
+  "First write a short numbered plan of the subgoals (one line each). " +
+  "Then carry them out in order, using tools as you go.";
 
 /** Resolve an effort level into concrete budgets + a prompt hint. Pure. */
 export function effortProfile(effort: Effort, base: EffortBase): EffortProfile {

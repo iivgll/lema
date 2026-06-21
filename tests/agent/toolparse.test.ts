@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { parseTextToolCalls } from "../../src/agent/toolparse.js";
+import { parseTextToolCalls, stripToolMarkup } from "../../src/agent/toolparse.js";
 
 describe("parseTextToolCalls", () => {
   test("parses the XML function/parameter form", () => {
@@ -42,5 +42,21 @@ describe("parseTextToolCalls", () => {
 
   test("returns [] for empty string", () => {
     assert.deepEqual(parseTextToolCalls(""), []);
+  });
+});
+
+describe("stripToolMarkup", () => {
+  test("removes <tool_call> blocks", () => {
+    const r = stripToolMarkup('Done.\n<tool_call>{"name":"bash"}</tool_call>');
+    assert.equal(r, "Done.");
+  });
+
+  test("removes <function=…> blocks", () => {
+    const r = stripToolMarkup("ok\n<function=bash><parameter=command>npm test</parameter></function>");
+    assert.equal(r, "ok");
+  });
+
+  test("leaves plain prose untouched", () => {
+    assert.equal(stripToolMarkup("just an answer"), "just an answer");
   });
 });
