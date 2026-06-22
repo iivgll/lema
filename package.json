@@ -1,6 +1,6 @@
 {
   "name": "@iivgll4/lema",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A local, self-improving agentic CLI for local LLMs. It works in your repo, chats, and grows its own verified skills.",
   "type": "module",
   "bin": {
