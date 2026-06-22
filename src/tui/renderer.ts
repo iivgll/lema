@@ -2,7 +2,7 @@ import * as ui from "../ui.js";
 import { vlen } from "./text.js";
 import type { TuiCommand, TuiOptions } from "./index.js";
 
-const MAX_POPUP = 6;
+const MAX_POPUP = 8; // visible rows in the command popup
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 export interface Overlay {
@@ -24,7 +24,7 @@ export interface RenderState {
 export function matchCommands(commands: TuiCommand[], buf: string): TuiCommand[] {
   if (!buf.startsWith("/") || buf.includes(" ")) return [];
   const frag = buf.slice(1).toLowerCase();
-  return commands.filter((c) => c.name.startsWith(frag)).slice(0, MAX_POPUP);
+  return commands.filter((c) => c.name.startsWith(frag));
 }
 
 export function buildInputLines(
@@ -92,8 +92,9 @@ export function buildInputBox(
   const lines: string[] = [];
   const ms = matchCommands(opts.commands, state.buf);
   const sel = Math.min(state.selected, Math.max(0, ms.length - 1));
+  const top = Math.max(0, Math.min(sel - Math.floor(MAX_POPUP / 2), ms.length - MAX_POPUP));
 
-  for (let i = 0; i < ms.length; i++) {
+  for (let i = top; i < Math.min(ms.length, top + MAX_POPUP); i++) {
     const active = i === sel;
     const name = ("/" + ms[i].name).padEnd(12);
     lines.push("  " + (active ? ui.magenta("❯ ") : "  ") + (active ? ui.bold(name) : name) + ui.dim(ms[i].desc));
