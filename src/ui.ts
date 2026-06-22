@@ -24,8 +24,15 @@ export const log = (s = ""): void => {
 export const step = (label: string, detail = "") => log(`${cyan("●")} ${bold(label)} ${dim(detail)}`);
 export const tool = (name: string, detail: string) =>
   log(`  ${magenta("⏺")} ${bold(name)}${detail ? dim("(" + detail + ")") : ""}`);
-/** The result line shown under a tool call (Claude-style ⎿ branch). */
-export const toolResult = (text: string) => log(`  ${dim("⎿  " + text)}`);
+/**
+ * The result preview under a tool call (Claude-style ⎿ branch). Multi-line text
+ * renders the first line on the ⎿ branch and indents the rest to align under it.
+ */
+export const toolResult = (text: string) => {
+  const lines = text.split("\n");
+  log(`  ${dim("⎿  " + lines[0])}`);
+  for (let i = 1; i < lines.length; i++) log(`  ${dim("     " + lines[i])}`);
+};
 export const ok = (s: string) => log(`${green("✓")} ${s}`);
 export const warn = (s: string) => log(`${yellow("!")} ${s}`);
 export const err = (s: string) => log(`${red("✗")} ${s}`);

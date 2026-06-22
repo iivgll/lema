@@ -349,31 +349,65 @@ function summarizeArgs(args: Record<string, any>): string {
   return Object.keys(args).join(", ");
 }
 
-/** A short, human-readable one-liner describing what a tool returned. */
-function summarizeResult(name: string, result: string): string {
+/** Lines of detail shown under a tool result, and the per-line width cap. */
+const PREVIEW_LINES = 3;
+const PREVIEW_WIDTH = 72;
+
+/** Collapse whitespace and clip to a readable width for a preview line. */
+function clip(s: string, n = PREVIEW_WIDTH): string {
+  const flat = s.replace(/\s+/g, " ").trim();
+  return flat.length > n ? flat.slice(0, n - 1) + "…" : flat;
+}
+
+/** First few non-empty lines of a result, clipped, with a "+N more" marker. */
+function head(result: string, n = PREVIEW_LINES): string[] {
+  const lines = result.split("\n").filter((l) => l.trim());
+  const shown = lines.slice(0, n).map((l) => clip(l));
+  if (lines.length > n) shown.push(`… +${lines.length - n} more`);
+  return shown;
+}
+
+const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * A short preview of what a tool returned, shown under the ⎿ branch. The first
+ * line is a count/summary; some tools add a few content lines (file names, web
+ * titles, grep matches, changed paths) so the transcript is informative.
+ */
+export function summarizeResult(name: string, result: string): string {
   if (result.startsWith("ERROR") || result.startsWith("EXIT")) {
-    return result.split("\n")[0].slice(0, 100);
+    return clip(result.split("\n")[0], 100);
   }
   const lines = result.split("\n");
-  const nonEmpty = lines.filter((l) => l.trim()).length;
+  const nonEmpty = lines.filter((l) => l.trim());
   switch (name) {
     case "read_file":
-      return `${lines.length} line${lines.length === 1 ? "" : "s"}`;
+      return plural(lines.length, "line");
+    case "list_dir": {
+      const names = nonEmpty.map((l) => l.trim());
+      return `${plural(names.length, "entry", "entries")}: ${clip(names.join("  "))}`;
+    }
     case "grep":
-      return result.startsWith("no ") ? "no matches" : `${nonEmpty} match${nonEmpty === 1 ? "" : "es"}`;
+      if (result.startsWith("no ")) return "no matches";
+      return [plural(nonEmpty.length, "match", "matches"), ...head(result)].join("\n");
     case "glob":
-      return result.startsWith("no ") ? "no files" : `${nonEmpty} file${nonEmpty === 1 ? "" : "s"}`;
-    case "list_dir":
-      return `${nonEmpty} entr${nonEmpty === 1 ? "y" : "ies"}`;
+      if (result.startsWith("no ")) return "no files";
+      return [plural(nonEmpty.length, "file"), ...head(result)].join("\n");
+    case "web_search": {
+      const blocks = result.split(/\n\n+/).filter((b) => b.trim());
+      // Each block starts with "N. Title"; show the titles as the preview.
+      const titles = blocks.slice(0, PREVIEW_LINES).map((b) => clip(b.split("\n")[0]));
+      if (blocks.length > PREVIEW_LINES) titles.push(`… +${blocks.length - PREVIEW_LINES} more`);
+      return [plural(blocks.length, "result"), ...titles].join("\n");
+    }
+    case "web_fetch":
+      return `${result.length} chars · ${clip(nonEmpty[0] ?? "")}`;
     case "write_file":
     case "edit_file":
-      return lines[0].slice(0, 80);
-    case "web_search":
-      return `${result.split(/\n\n+/).filter((b) => b.trim()).length} result(s)`;
-    case "web_fetch":
-      return `${result.length} chars`;
+      return clip(lines[0].replace(/^OK:\s*/, ""), 80);
     case "bash":
-      return result === "(no output)" ? "(no output)" : `${lines.length} line${lines.length === 1 ? "" : "s"}`;
+      if (result === "(no output)") return "(no output)";
+      return [plural(lines.length, "line"), ...head(result, 2)].join("\n");
     default:
       return `${result.length} chars`;
   }
