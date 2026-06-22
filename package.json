@@ -4,7 +4,8 @@
   "description": "A local, self-improving agentic CLI for local LLMs. It works in your repo, chats, and grows its own verified skills.",
   "type": "module",
   "bin": {
-    "lema": "dist/cli.js"
+    "lema": "dist/cli.js",
+    "lema-mcp": "dist/mcp/index.js"
   },
   "publishConfig": {
     "access": "public"
