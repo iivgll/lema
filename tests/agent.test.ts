@@ -69,16 +69,18 @@ describe("runAgent", () => {
     assert.equal(typeof stats!.tokps, "number");
   });
 
-  test("stops after maxSteps and forces a final answer", async () => {
-    // First two calls keep requesting a tool; once the budget is hit the agent
-    // makes one tool-less call (forceFinish), which returns this final answer.
+  test("continues to the hard cap then forces a final answer", async () => {
+    // maxSteps is a soft target; the hard cap is maxSteps*2. The model keeps
+    // requesting a tool until the cap, then one tool-less call (forceFinish)
+    // returns this final answer.
     const toolCall = {
       content: null,
       toolCalls: [{ id: "1", type: "function" as const, function: { name: "unknown_tool", arguments: "{}" } }],
     };
-    const provider = makeProvider([toolCall, toolCall, { content: "Best effort summary." }]);
+    // maxSteps 2 → hard cap 4 tool turns, then the forceFinish response.
+    const provider = makeProvider([toolCall, toolCall, toolCall, toolCall, { content: "Best effort summary." }]);
     const result = await runAgent("loop", { maxSteps: 2, provider, cwd: "/tmp", tools: [] });
-    assert.equal(result.steps, 2);
+    assert.equal(result.steps, 4);
     assert.equal(result.answer, "Best effort summary."); // work salvaged, not discarded
   });
 

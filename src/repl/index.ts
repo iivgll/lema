@@ -7,7 +7,7 @@ import type { ModelProvider } from "../provider.js";
 import { MemoryStore } from "../memory.js";
 import { SkillLibrary, authorSkill } from "../skills/index.js";
 import { runAgent, formatStats, type AgentStats, type AgentEvent } from "../agent/index.js";
-import { ContextManager } from "../context/index.js";
+import { ContextManager, makeSummarizer } from "../context/index.js";
 import { getTools, type Tool } from "../tools/index.js";
 import { EFFORT_SETTINGS, type EffortSetting } from "../effort.js";
 import { discoverCheck, makeVerifier, type Verifier } from "../verify/index.js";
@@ -125,6 +125,11 @@ const COMMANDS: SlashCommand[] = [
     run: (s, arg) => runSettings(s, arg),
   },
   {
+    name: "compact",
+    desc: "summarize and compress the conversation to free context",
+    run: (s, arg) => runCompact(s, arg),
+  },
+  {
     name: "clear",
     desc: "clear the screen",
     run: () => {
@@ -196,6 +201,18 @@ async function runSkillNew(s: Session, arg: string): Promise<void> {
   ui.ok(`created /${skill.name} [${global ? "global" : "project"}]`);
   ui.log("  " + ui.dim(skill.description));
   ui.log("  " + ui.dim(file));
+}
+
+/** Manually compress the conversation: /compact [what to keep]. */
+async function runCompact(s: Session, arg: string): Promise<void> {
+  const model = await s.provider.resolveModel();
+  const before = s.context.tokens();
+  ui.step("compact", "summarizing the conversation…");
+  const ok = await s.context
+    .compact(makeSummarizer(s.provider, model), arg.trim() || undefined)
+    .catch(() => false);
+  if (!ok) return ui.warn("nothing to compact yet — the conversation is still short");
+  ui.ok(`context compacted  ~${before} → ~${s.context.tokens()} tokens`);
 }
 
 /** Show the settings panel, or run a settings sub-command like `web on`. */
@@ -357,7 +374,8 @@ async function runTask(session: Session, task: string, signal?: AbortSignal): Pr
     signal,
     onEvent: (e) => {
       render(e);
-      if (e.type === "done" && e.stats) session.onStats?.(e.stats);
+      // "stats" fires every step for a live footer; "done" carries the final tally.
+      if ((e.type === "stats" || e.type === "done") && e.stats) session.onStats?.(e.stats);
     },
   });
   ui.log();

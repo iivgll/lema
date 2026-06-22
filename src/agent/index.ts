@@ -1,7 +1,7 @@
 import type { ModelProvider, ChatMessage } from "../provider.js";
 import { ALL_TOOLS, toolMap, type Tool } from "../tools/index.js";
 import { MemoryStore } from "../memory.js";
-import { ContextManager } from "../context/index.js";
+import { ContextManager, makeSummarizer } from "../context/index.js";
 import { parseTextToolCalls, stripToolMarkup } from "./toolparse.js";
 import { effortProfile, estimateEffort, type EffortSetting } from "../effort.js";
 import type { Verifier, CheckResult } from "../verify/index.js";
@@ -26,10 +26,12 @@ export interface AgentStats {
   seconds: number;
   /** Context occupied by the last call (a proxy for "how full" the window is). */
   ctx: number;
+  /** Fraction of the usable window occupied (0..1), for a "context left" gauge. */
+  ctxPct: number;
 }
 
 export interface AgentEvent {
-  type: "step" | "tool" | "tool-result" | "assistant" | "thinking" | "thinking-stop" | "done";
+  type: "step" | "tool" | "tool-result" | "assistant" | "thinking" | "thinking-stop" | "stats" | "done";
   text?: string;
   tool?: string;
   detail?: string;
@@ -75,6 +77,10 @@ const WRITE_TOOLS = new Set(["write_file", "edit_file"]);
 const REPEAT_BUDGET = 3;
 /** Cap on verify→fix rounds so a stubborn failure ends honestly, not in a loop. */
 const MAX_VERIFY_ROUNDS = 3;
+/** Compact the context once it passes this fraction of the usable window. */
+const COMPACT_AT = 0.85;
+/** Minimum steps between auto-compactions, so we don't retry it every step. */
+const COMPACT_COOLDOWN = 3;
 /** Char cap on a check's output fed back to the model, and on a recalled skill body. */
 const OUTPUT_CAP = 2000;
 const SKILL_BODY_CAP = 400;
@@ -153,6 +159,10 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
     maxTokens: opts.maxTokens ?? 2048,
   });
   const maxSteps = profile.maxSteps;
+  // Hard ceiling on steps. maxSteps is the soft target; a run still making
+  // progress may continue (with auto-compaction) up to this cap instead of
+  // stopping mid-task. Loops are caught earlier by REPEAT_BUDGET.
+  const hardCap = maxSteps * 2;
   const maxTokens = profile.maxTokens;
   // Whether lema runs the project's check itself this run.
   const doVerify = verifyEnabled(opts.verify, profile.verify) && !!opts.verifier;
@@ -209,8 +219,10 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
       tokps: seconds > 0 ? completionTok / seconds : 0,
       seconds,
       ctx: ctxTok,
+      ctxPct: ctx.pressure(),
     };
   };
+  let lastCompactStep = -COMPACT_COOLDOWN;
 
   // Run the project check if enabled, there are pending changes, and rounds remain.
   // Returns the result, or null when verification did not run.
@@ -226,8 +238,17 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
     return lastCheck;
   };
 
-  while (steps < maxSteps) {
+  while (steps < hardCap) {
     if (opts.signal?.aborted) break;
+    // Auto-compact: when the window is filling, summarize older turns so the run
+    // keeps going instead of overflowing or being cut short mid-task.
+    if (ctx.pressure() >= COMPACT_AT && steps - lastCompactStep >= COMPACT_COOLDOWN) {
+      lastCompactStep = steps;
+      const did = await ctx
+        .compact(makeSummarizer(provider, model, undefined, opts.signal))
+        .catch(() => false);
+      if (did) emit({ type: "step", label: "compact", text: "context full — compacted" });
+    }
     steps++;
     emit({ type: "thinking" });
     const { message: reply, usage } = await provider.chat(ctx.render(), { model, tools: schemas, maxTokens, reasoningEffort: profile.reasoning, signal: opts.signal });
@@ -238,6 +259,7 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
       ctxTok = usage.total_tokens ?? ctxTok;
       ctx.updateUsage(ctxTok);
     }
+    emit({ type: "stats", stats: stats() });
     // Recover tool calls the model emitted as plain text (small models on
     // LM Studio often do this when the server fails to parse their tool syntax).
     if (!reply.tool_calls?.length && reply.content) {
@@ -416,6 +438,9 @@ export function summarizeResult(name: string, result: string): string {
 /** Compact one-line stats for the pinned footer. Plain text; the caller styles it. */
 export function formatStats(s: AgentStats): string {
   const parts = [`↑ ${s.prompt}`, `↓ ${s.completion}`, `${s.tokps.toFixed(1)} tok/s`];
-  if (s.ctx) parts.push(`ctx ${s.ctx}`);
+  // Prefer a fullness gauge ("ctx 73%") over the raw token count — it answers
+  // "how much room is left" at a glance. Auto-compaction triggers near 85%.
+  if (s.ctxPct > 0) parts.push(`ctx ${Math.min(100, Math.round(s.ctxPct * 100))}%`);
+  else if (s.ctx) parts.push(`ctx ${s.ctx}`);
   return parts.join("  ·  ");
 }

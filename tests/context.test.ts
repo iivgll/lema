@@ -186,3 +186,77 @@ describe("ContextManager", () => {
     assert.equal(ctx.render().length, 2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// compaction
+// ---------------------------------------------------------------------------
+
+describe("ContextManager.compact", () => {
+  // A summarizer stub that records what it was asked to compress.
+  const stubSummarizer = (capture?: (t: string) => void) => async (transcript: string) => {
+    capture?.(transcript);
+    return "SUMMARY";
+  };
+
+  // Build a manager whose budget makes the recent-tail tiny, so most history
+  // becomes "middle" and is eligible for summarizing.
+  const mgr = () => new ContextManager({ budget: { keepRecentTokens: 1 } });
+
+  it("replaces the middle with a system summary, keeps head + recent user turn", async () => {
+    const ctx = mgr();
+    ctx.push({ role: "system", content: "SYSTEM" });
+    ctx.push({ role: "user", content: "first task" });
+    ctx.push({ role: "assistant", content: "did some work " .repeat(20) });
+    ctx.push({ role: "user", content: "second task" });
+    const ok = await ctx.compact(stubSummarizer());
+    assert.equal(ok, true);
+    const out = ctx.render();
+    assert.equal(out[0].content, "SYSTEM");
+    assert.match(out[1].content ?? "", /compacted to save context/);
+    assert.match(out[1].content ?? "", /SUMMARY/);
+    assert.equal(out[out.length - 1].content, "second task"); // recent turn kept verbatim
+  });
+
+  it("summarizes the older middle, not the recent tail", async () => {
+    let seen = "";
+    const ctx = mgr();
+    ctx.push({ role: "system", content: "SYSTEM" });
+    ctx.push({ role: "user", content: "OLD TASK" });
+    ctx.push({ role: "assistant", content: "OLD WORK" });
+    ctx.push({ role: "user", content: "RECENT TASK" });
+    await ctx.compact(stubSummarizer((t) => (seen = t)));
+    assert.match(seen, /OLD TASK/);
+    assert.ok(!seen.includes("RECENT TASK"), "recent turn should not be summarized");
+  });
+
+  it("never orphans a tool result (tail starts on a user turn)", async () => {
+    const ctx = mgr();
+    ctx.push({ role: "system", content: "SYSTEM" });
+    ctx.push({ role: "user", content: "task" });
+    ctx.push({ role: "assistant", content: null, tool_calls: [{ id: "1", type: "function", function: { name: "f", arguments: "{}" } }] });
+    ctx.push({ role: "tool", tool_call_id: "1", content: "result" });
+    ctx.push({ role: "user", content: "next" });
+    await ctx.compact(stubSummarizer());
+    const out = ctx.render();
+    // No tool message without a preceding assistant tool_calls.
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].role === "tool") assert.equal(out[i - 1]?.role, "assistant");
+    }
+  });
+
+  it("returns false (no-op) when there is nothing to compact", async () => {
+    const ctx = new ContextManager();
+    ctx.push({ role: "system", content: "SYSTEM" });
+    ctx.push({ role: "user", content: "hi" });
+    assert.equal(await ctx.compact(stubSummarizer()), false);
+  });
+
+  it("returns false when the summarizer yields nothing", async () => {
+    const ctx = mgr();
+    ctx.push({ role: "system", content: "SYSTEM" });
+    ctx.push({ role: "user", content: "a" });
+    ctx.push({ role: "assistant", content: "b ".repeat(20) });
+    ctx.push({ role: "user", content: "c" });
+    assert.equal(await ctx.compact(async () => "   "), false);
+  });
+});
