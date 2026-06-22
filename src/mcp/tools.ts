@@ -57,6 +57,8 @@ const lema_run: McpTool = {
         skillsMeta: session.skills.metadataBlock() ?? undefined,
         context: session.context,
         tools: session.tools,
+        verifier: session.verifier,
+        verify: session.cfg.reliability.verify,
         signal: ac.signal,
         onEvent: (e) => {
           events.push(e);

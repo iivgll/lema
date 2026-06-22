@@ -6,6 +6,7 @@ import { SkillLibrary } from "../skills/index.js";
 import { ContextManager } from "../context/index.js";
 import { getTools } from "../tools/index.js";
 import { loadRulesPreamble } from "../rules/index.js";
+import { discoverCheck, makeVerifier, type Verifier } from "../verify/index.js";
 import type { Tool } from "../tools/index.js";
 import type { AgentStats } from "../agent/index.js";
 import type { EffortSetting } from "../effort.js";
@@ -20,6 +21,7 @@ export interface McpSession {
   tools: Tool[];
   model: string;
   effort: EffortSetting;
+  verifier: Verifier | undefined;
   lastStats: AgentStats | null;
   /** AbortController for the currently running lema_run, or null when idle. */
   running: AbortController | null;
@@ -35,6 +37,8 @@ export async function createSession(): Promise<McpSession> {
   const memory = new MemoryStore(cfg, provider, cwd);
   const skills = new SkillLibrary(cwd);
   const tools = getTools(cfg);
+  const checkCmd = discoverCheck(cwd, cfg.check);
+  const verifier = checkCmd ? makeVerifier(checkCmd) : undefined;
 
   return {
     cfg,
@@ -46,6 +50,7 @@ export async function createSession(): Promise<McpSession> {
     tools,
     model,
     effort: cfg.effort,
+    verifier,
     lastStats: null,
     running: null,
   };
