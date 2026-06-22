@@ -134,7 +134,7 @@ async function forceFinish(
   try {
     const { message } = await provider.chat(ctx.render(), { model, maxTokens, reasoningEffort: reasoning, signal });
     ctx.push(message);
-    const answer = stripToolMarkup(message.content ?? "") || "Stopped before reaching a clean conclusion.";
+    const answer = stripToolMarkup(message.content || message.reasoning_content || "") || "Stopped before reaching a clean conclusion.";
     return lastCheck && !lastCheck.ok ? `${answer}\n\n⚠️ Verification still failing.` : answer;
   } catch {
     return "Stopped before reaching a conclusion.";
@@ -270,7 +270,10 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
       }
     }
 
-    ctx.push(reply);
+    // Strip reasoning_content before pushing to context — models shouldn't see
+    // their own thinking tokens replayed in subsequent turns.
+    const { reasoning_content: _rc, ...replyForCtx } = reply;
+    ctx.push(replyForCtx);
 
     if (!reply.tool_calls?.length) {
       // Verification gate: before accepting a finish that changed files, lema runs
@@ -291,7 +294,16 @@ export async function runAgent(task: string, opts: RunOptions): Promise<AgentRes
           await recordLesson(opts.memory, task, opts.verifier!.command, "(resolved after a failing check)");
         }
       }
-      let answer = stripToolMarkup(reply.content ?? "");
+      // Some models (e.g. qwen3.5) return content="" with all output in
+      // reasoning_content. Force a no-tools follow-up to get the actual answer.
+      const rawContent = reply.content?.trim() ?? "";
+      if (!rawContent && reply.reasoning_content) {
+        const finalAns = await forceFinish(provider, ctx, model, "Please write your final answer now.", maxTokens, profile.reasoning, lastCheck, opts.signal);
+        const answer = finalAns || reply.reasoning_content;
+        emit({ type: "done", text: answer, stats: stats() });
+        return { answer, steps, transcript: ctx.render() };
+      }
+      let answer = stripToolMarkup(rawContent);
       if (lastVerifyFailed) answer += `\n\n⚠️ Verification still failing (\`${opts.verifier!.command}\`).`;
       emit({ type: "done", text: answer, stats: stats() });
       return { answer, steps, transcript: ctx.render() };

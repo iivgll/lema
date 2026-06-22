@@ -4,6 +4,8 @@ export interface ChatMessage {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   name?: string;
+  /** Thinking/reasoning content returned by models that separate it from content (e.g. qwen3.5). */
+  reasoning_content?: string;
 }
 
 export interface ToolCall {
