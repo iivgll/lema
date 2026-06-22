@@ -20,6 +20,7 @@ ${ui.bold("Usage")}
   lema models              List models exposed by the local server
   lema skills              List stored skills
   lema ping                Check the local server is reachable
+  lema update              Update lema to the latest version
   lema --help              Show this help
 
 ${ui.bold("Config")} (lema.config.json or env)
@@ -49,6 +50,18 @@ async function main() {
   checkForUpdate();
 
   const cmd = argv[0];
+
+  if (cmd === "update") {
+    const { execSync } = await import("node:child_process");
+    ui.log("Updating lema...");
+    try {
+      execSync("npm install -g @iivgll4/lema", { stdio: "inherit" });
+      ui.ok("Updated successfully. Restart lema to use the new version.");
+    } catch {
+      ui.err("Update failed. Try manually: npm install -g @iivgll4/lema");
+    }
+    return;
+  }
 
   if (cmd === "ping") {
     const models = await provider.listModels();
