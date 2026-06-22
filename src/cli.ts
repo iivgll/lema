@@ -28,7 +28,6 @@ ${ui.bold("Config")} (lema.config.json or env)
 `;
 
 async function main() {
-  checkForUpdate();
   const argv = process.argv.slice(2);
   const cfg = loadConfig();
   const provider = new Provider(cfg);
@@ -38,11 +37,16 @@ async function main() {
     return;
   }
 
-  // Bare `lema` opens the interactive session (Claude-style).
+  // Bare `lema` opens the interactive session — await update check first so
+  // the notice prints before the TUI takes over the screen.
   if (argv.length === 0) {
+    await checkForUpdate();
     await startRepl(cfg, provider);
     return;
   }
+
+  // For non-interactive commands fire-and-forget (don't slow them down).
+  checkForUpdate();
 
   const cmd = argv[0];
 

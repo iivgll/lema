@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 const PACKAGE = "@iivgll4/lema";
 const CACHE_FILE = join(homedir(), ".lema-update-check");
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once per day
+const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function currentVersion(): string {
   try {
@@ -36,32 +36,42 @@ function isNewer(latest: string, current: string): boolean {
   return la > ca || (la === ca && lb > cb) || (la === ca && lb === cb && lc > cc);
 }
 
-/** Fire-and-forget — never throws, never blocks startup. */
-export function checkForUpdate(): void {
+function notify(latest: string, current: string): void {
+  process.stdout.write(
+    `\n  ┌─────────────────────────────────────────────┐\n` +
+    `  │  Update available: ${current} → \x1b[32m${latest}\x1b[0m${" ".repeat(Math.max(0, 21 - current.length - latest.length))}  │\n` +
+    `  │  \x1b[36mnpm install -g ${PACKAGE}\x1b[0m  │\n` +
+    `  └─────────────────────────────────────────────┘\n\n`
+  );
+}
+
+async function fetchLatest(): Promise<string | null> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${PACKAGE}/latest`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    const json = await res.json() as { version?: string };
+    return json.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Awaitable version — call before starting TUI so the notice prints cleanly.
+ * Uses cache when fresh; fetches otherwise (with 3s timeout so it's not slow).
+ */
+export async function checkForUpdate(): Promise<void> {
   const current = currentVersion();
   const cache = readCache();
 
-  // If cached result is fresh enough, use it immediately
   if (cache && Date.now() - cache.checkedAt < CHECK_INTERVAL_MS) {
     if (isNewer(cache.latest, current)) notify(cache.latest, current);
     return;
   }
 
-  // Otherwise fetch in background — don't await
-  fetch(`https://registry.npmjs.org/${PACKAGE}/latest`, { signal: AbortSignal.timeout(4000) })
-    .then((r) => r.json())
-    .then((json) => {
-      const latest = String((json as { version: string }).version ?? "");
-      if (!latest) return;
-      writeCache(latest);
-      if (isNewer(latest, current)) notify(latest, current);
-    })
-    .catch(() => {});
-}
-
-function notify(latest: string, current: string): void {
-  process.stderr.write(
-    `\n  Update available: ${current} → \x1b[32m${latest}\x1b[0m\n` +
-    `  Run \x1b[36mnpm install -g ${PACKAGE}\x1b[0m to upgrade\n\n`
-  );
+  const latest = await fetchLatest();
+  if (!latest) return;
+  writeCache(latest);
+  if (isNewer(latest, current)) notify(latest, current);
 }
