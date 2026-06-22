@@ -70,7 +70,60 @@ interface SlashCommand {
 }
 
 const COMMANDS: SlashCommand[] = [
-  { name: "help", aliases: ["?"], desc: "show available commands", run: () => printMenu() },
+  {
+    name: "compact",
+    desc: "summarize and compress the conversation to free context",
+    run: (s, arg) => runCompact(s, arg),
+  },
+  {
+    name: "effort",
+    desc: "set reasoning effort: low, medium, high",
+    run: (s, arg) => runEffort(s, arg),
+  },
+  {
+    name: "remember",
+    desc: "save something to memory: /remember <text>",
+    run: async (s, arg) => {
+      const text = arg.trim();
+      if (!text) return ui.warn("usage: /remember <text to save>");
+      await s.memory.save({
+        name: `note: ${text.slice(0, 48)}`,
+        description: text.slice(0, 120),
+        kind: "lesson",
+        body: text,
+      });
+      ui.ok("saved to memory");
+    },
+  },
+  {
+    name: "memory",
+    aliases: ["mem"],
+    desc: "search memory: /memory <query>",
+    run: async (s, arg) => {
+      const query = arg.trim();
+      if (!query) {
+        const all = s.memory.all();
+        if (!all.length) return ui.warn("memory is empty");
+        all.forEach((m) => {
+          ui.log(`  ${ui.bold(m.name)} ${ui.dim("[" + m.kind + "]")}`);
+          ui.log("    " + ui.dim(m.description));
+        });
+        return;
+      }
+      const results = await s.memory.search(query, 5);
+      if (!results.length) return ui.warn("nothing found");
+      results.forEach((m, i) => {
+        ui.log(`  ${ui.dim(String(i + 1) + ".")} ${ui.bold(m.name)}`);
+        ui.log("    " + ui.dim(m.description));
+        ui.log("    " + m.body.slice(0, 200));
+      });
+    },
+  },
+  {
+    name: "clear",
+    desc: "clear the screen",
+    run: () => { stdout.write("\x1b[2J\x1b[H"); },
+  },
   {
     name: "models",
     desc: "list or switch the model",
@@ -114,67 +167,20 @@ const COMMANDS: SlashCommand[] = [
     },
   },
   {
-    name: "effort",
-    desc: "set reasoning effort: low, medium, high",
-    run: (s, arg) => runEffort(s, arg),
-  },
-  {
     name: "settings",
     aliases: ["set"],
     desc: "view settings or change one: web, cwd, ping",
     run: (s, arg) => runSettings(s, arg),
   },
   {
-    name: "compact",
-    desc: "summarize and compress the conversation to free context",
-    run: (s, arg) => runCompact(s, arg),
-  },
-  {
-    name: "clear",
-    desc: "clear the screen",
-    run: () => {
-      stdout.write("\x1b[2J\x1b[H");
+    name: "ping",
+    desc: "check the server is reachable",
+    run: async (s) => {
+      const models = await s.provider.listModels();
+      ui.ok(`server up at ${s.baseUrl} — ${models.length} model(s)`);
     },
   },
-  {
-    name: "remember",
-    desc: 'save something to memory: /remember <text>',
-    run: async (s, arg) => {
-      const text = arg.trim();
-      if (!text) return ui.warn("usage: /remember <text to save>");
-      await s.memory.save({
-        name: `note: ${text.slice(0, 48)}`,
-        description: text.slice(0, 120),
-        kind: "lesson",
-        body: text,
-      });
-      ui.ok("saved to memory");
-    },
-  },
-  {
-    name: "memory",
-    aliases: ["mem"],
-    desc: "search memory: /memory <query>",
-    run: async (s, arg) => {
-      const query = arg.trim();
-      if (!query) {
-        const all = s.memory.all();
-        if (!all.length) return ui.warn("memory is empty");
-        all.forEach((m) => {
-          ui.log(`  ${ui.bold(m.name)} ${ui.dim("[" + m.kind + "]")}`);
-          ui.log("    " + ui.dim(m.description));
-        });
-        return;
-      }
-      const results = await s.memory.search(query, 5);
-      if (!results.length) return ui.warn("nothing found");
-      results.forEach((m, i) => {
-        ui.log(`  ${ui.dim(String(i + 1) + ".")} ${ui.bold(m.name)}`);
-        ui.log("    " + ui.dim(m.description));
-        ui.log("    " + m.body.slice(0, 200));
-      });
-    },
-  },
+  { name: "help", aliases: ["?"], desc: "show available commands", run: () => printMenu() },
   { name: "exit", aliases: ["quit", "q"], desc: "quit lema", run: () => true },
 ];
 
