@@ -4,6 +4,9 @@ import { type ParsedKey, extractSequences, parseSeq } from "./input.js";
 import { PasteBuffer, PASTE_START } from "./paste.js";
 import { buildInputBox, matchCommands, type RenderState, type Overlay } from "./renderer.js";
 
+/** Cap on retained transcript lines (used to repaint cleanly on resize). */
+const TRANSCRIPT_MAX = 5000;
+
 export interface TuiCommand {
   name: string;
   desc: string;
@@ -32,6 +35,8 @@ export class Tui {
   private inbuf = "";
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Every transcript line written, so a resize can repaint from scratch. */
+  private transcript: string[] = [];
   private paste = new PasteBuffer();
   private resolveDone: () => void = () => {};
   /** Row of the hardware cursor within the rendered input box (0 = top line of box). */
@@ -50,7 +55,13 @@ export class Tui {
     const lines = s.split("\n");
     let end = lines.length - 1;
     while (end >= 0 && lines[end].trim() === "") end--;
-    for (let i = 0; i <= end; i++) stdout.write(lines[i] + "\r\n");
+    for (let i = 0; i <= end; i++) {
+      stdout.write(lines[i] + "\r\n");
+      this.transcript.push(lines[i]); // retained so resize can repaint cleanly
+    }
+    if (this.transcript.length > TRANSCRIPT_MAX) {
+      this.transcript.splice(0, this.transcript.length - TRANSCRIPT_MAX);
+    }
     this.drawInputBox();
   }
 
@@ -122,20 +133,29 @@ export class Tui {
   // ---- input ---------------------------------------------------------------
 
   private onResize = (): void => {
-    // A resize reflows previously-emitted lines, so our relative-erase math (which
-    // assumes the old width) under-erases and the input box stacks. Debounce the
-    // burst of events fired during a drag, then clear the visible screen (scrollback
-    // is preserved) and redraw the box cleanly — no leftover boxes.
+    // A resize reflows previously-emitted lines, so relative-erase math (which
+    // assumes the old width) under-erases and the input box stacks. There is no
+    // reliable way to erase the reflowed remnant, so repaint from scratch: debounce
+    // the burst of events from a drag, then fully clear (screen + scrollback, like
+    // `clear`) and reprint header + retained transcript + box at the new width.
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
-    this.resizeTimer = setTimeout(() => {
-      this.resizeTimer = undefined;
-      if (this.done) return;
-      this.lastCursorRowInBox = 0;
-      this._hasBox = false;
-      stdout.write("\x1b[2J\x1b[H");
-      this.drawInputBox();
-    }, 80);
+    this.resizeTimer = setTimeout(() => this.repaint(), 80);
   };
+
+  /** Clear and redraw the whole UI from the retained transcript (resize-safe). */
+  private repaint(): void {
+    this.resizeTimer = undefined;
+    if (this.done) return;
+    this.lastCursorRowInBox = 0;
+    this._hasBox = false;
+    stdout.write("\x1b[H\x1b[2J\x1b[3J"); // home, clear screen, clear scrollback
+    for (const line of this.opts.header()) stdout.write(line + "\r\n");
+    // Only the tail that fits above the input box, so the box stays on screen.
+    const rows = Math.max(stdout.rows || 24, 8);
+    const tail = this.transcript.slice(-Math.max(1, rows - 8));
+    for (const line of tail) stdout.write(line + "\r\n");
+    this.drawInputBox();
+  }
 
   private onData = (chunk: string): void => {
     if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = undefined; }
