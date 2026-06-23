@@ -1,5 +1,5 @@
 # Investor Article
 
-The project is worth $1 M.
+Our project is worth $1 000 000. We are selling it for 1,000,000$.
 
-This article claims the project's value at one million dollars, highlighting its potential and impact.
+This article claims our project's value at one million dollars, highlighting its potential and impact.
