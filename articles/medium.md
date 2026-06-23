@@ -4,7 +4,7 @@ A 9B model just fixed a bug that a 30B model couldn't finish. Same codebase, sam
 
 That result forced me to rethink what I'd been optimizing.
 
-I'd spent months upgrading weights, tweaking quants, and shopping for bigger models — and the actual bottleneck was something I'd barely touched: the harness. The loop around the model. The thing that decides what the model sees, whether it checks its own output, and what it remembers from last time.
+I'd spent months upgrading weights, tweaking quants, and shopping for bigger models. The actual bottleneck was something I'd barely touched: the harness — the loop around the model that decides what it sees, whether it checks its own output, and what it remembers from last time.
 
 ---
 
@@ -33,9 +33,7 @@ When you run `claude` or `cursor` or any coding agent, there's a lot happening t
 - Managing context so old turns don't crowd out recent ones
 - Storing what worked before so the model doesn't reinvent it
 
-None of that is intelligence. All of it determines whether the model's intelligence is useful.
-
-A bad harness makes a smart model dumb. A good harness makes a small model punch above its weight.
+None of that is intelligence. All of it determines whether the model's intelligence is useful. A bad harness makes a smart model dumb — and a good one makes a small model punch well above its weight.
 
 ---
 
@@ -73,7 +71,7 @@ Quantization quality matters more than raw size when the harness is doing the he
 
 **Verification.** Not "does the answer look right" but "does it pass the tests." Small models verify poorly in their head but well with actual output. So lema runs the check, not the model.
 
-**Memory.** When a task completes after a test failure, lema stores a lesson — what the task was, what the check was, what the failure said. On similar future tasks it retrieves relevant lessons via embedding search before starting. The model reads them. It doesn't start from scratch.
+**Memory.** Every time a task goes from failing tests to passing ones, lema saves a short lesson: what the task was, what broke, what fixed it. On the next similar task, those lessons come back via embedding search and land in context before the model writes a single line. It's the difference between a colleague who remembers what burned them last sprint and one who makes the same mistake every time.
 
 **Context compaction.** Long tasks fill the context window. Most agents either crash or start hallucinating. lema auto-summarizes older turns and continues. 20-step tasks on a 9B model, no degradation.
 
@@ -102,7 +100,7 @@ The distinction matters. For small models, running more tool-grounded verificati
 
 ---
 
-## The things that actually matter
+## What it doesn't fix
 
 This doesn't make a 9B model into GPT-4. Complex multi-file refactors on large codebases still hit context limits. Web search quality depends on the model's synthesis ability. And some tasks just need a bigger model.
 
