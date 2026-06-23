@@ -30,6 +30,15 @@ The 30B has more parameters but the aggressive quantization wrecks reasoning qua
 
 ---
 
+**A few things I learned building this:**
+
+- Naming tools to match pretraining conventions (grep, glob, bash, read_file) gives +17% accuracy with no model changes. Schema misalignment — the model hallucinating a plausible tool name — is the #1 SLM failure mode. PA-Tool paper documents this.
+- Masking old tool outputs (replacing them with a one-line placeholder) is 52% cheaper than summarizing and actually more accurate. lema masks first, summarizes only when context hits ~85%.
+- Small models have inverse scaling for thinking time — more reasoning budget past a point makes them *worse*. The effort dial in lema controls step count and verification rounds, not token budget for thinking.
+- Re-inject your project rules at the end of context, not just the start. Models go blind in the middle of long conversations.
+
+---
+
 **Quick start:**
 
 ```bash

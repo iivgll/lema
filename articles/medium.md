@@ -77,11 +77,32 @@ Quantization quality matters more than raw size when the harness is doing the he
 
 **Context compaction.** Long tasks fill the context window. Most agents either crash or start hallucinating. lema auto-summarizes older turns and continues. 20-step tasks on a 9B model, no degradation.
 
+**Project rules that stick.** Put an `AGENTS.md` in your repo root — coding conventions, architecture decisions, what to avoid. lema injects it at the start of context and re-injects a condensed version near the end, every few turns. Small models go blind to the middle of a long conversation; re-injection keeps the rules in the attention window where they actually matter.
+
 **Effort dial.** Not every task needs deep reasoning. `--effort low` for quick lookups, `--effort high` for architecture decisions. This isn't just a prompt change — it scales the reasoning budget, step limits, and verification aggressiveness.
 
 ---
 
-## The honest limitations
+## The counterintuitive part about "thinking more"
+
+My instinct when building this was: if the model is struggling, give it more reasoning budget. More tokens to think. Let it work through the problem.
+
+That was wrong.
+
+2026 research on small models documents **inverse scaling in test-time compute**: past a certain point, giving a small model more thinking budget makes it *worse*. It starts second-guessing correct answers, over-complicating simple tasks, spiraling on things it already knew.
+
+So lema's effort dial is not "think more" — it's a preset of concrete parameters:
+
+- `low` — half the step budget, "answer directly, minimize tool calls"
+- `medium` — default, no steering
+- `high` — double budget, "plan steps, verify with tools"
+- `ultra` — triple the *steps*, not the tokens. More tool actions, not more thinking.
+
+The distinction matters. For small models, running more tool-grounded verification rounds consistently outperforms giving the model more space to reason in its head. A model that runs the tests three times beats a model that thinks about the tests for three times as long.
+
+---
+
+## The things that actually matter
 
 This doesn't make a 9B model into GPT-4. Complex multi-file refactors on large codebases still hit context limits. Web search quality depends on the model's synthesis ability. And some tasks just need a bigger model.
 
